@@ -2,7 +2,7 @@
   "name": "shark-translate",
   "displayName": "SharkTranslate",
   "description": "中文转shark",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "zs-liu",
   "engines": {
     "vscode": "^1.78.0"
