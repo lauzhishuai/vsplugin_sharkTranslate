@@ -41,6 +41,22 @@
           "when": "editorTextFocus && !editorReadonly"
         }
       ]
+    },
+    "configuration": {
+      "type": "object",
+      "title": "SharkTranslate",
+      "properties": {
+        "sharkTranslate.sharkStoreVar": {
+          "type": "string",
+          "default": "language",
+          "description": "shark存储变量名"
+        },
+        "sharkTranslate.sharkPrefix": {
+          "type": "array",
+          "default": [],
+          "description": "配置页面shark前缀，用于替换时快捷去除通用前缀"
+        }
+      }
     }
   },
   "scripts": {

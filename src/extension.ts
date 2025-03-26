@@ -19,6 +19,10 @@ export function activate(context: vscode.ExtensionContext) {
     const document = editor.document;
     const text = document.getText();
 
+    // 获取用户配置的shark前缀
+    const sharkPrefix = vscode.workspace.getConfiguration().get('sharkTranslate.sharkPrefix') as Array<string>;
+    const sharkStoreVar = vscode.workspace.getConfiguration().get('sharkTranslate.sharkStoreVar') as string;
+
     // 正则表达式匹配注释
     // const commentPatterns = [
     //     /\/\/.*$/gm,          // 单行注释
@@ -73,7 +77,12 @@ export function activate(context: vscode.ExtensionContext) {
           const content = match.slice(1, -1); // 去掉引号
           for (const { Origin, TransKey } of result) {
             if (Origin === content) {
-              return `'${TransKey}'`;
+              const hasPrefix = sharkPrefix.find(item => TransKey.startsWith(item));
+              if (hasPrefix) {
+                return `${sharkStoreVar}['${removeText(TransKey, hasPrefix)}']`;
+              } else {
+                return `${sharkStoreVar}['${TransKey}']`;
+              }
             }
           }
         }
@@ -148,6 +157,12 @@ async function replaceConfigValue() {
   } else {
       vscode.window.showErrorMessage('未读取到shark配置文件或未正确获取到工作区，请检查');
   }
+}
+
+// 字符串删除指定文本
+function removeText(originalText:string,textToRemove:string) {
+  const regex = new RegExp(textToRemove, 'g');
+  return originalText.replace(regex, '');
 }
 
 export function deactivate() {}
