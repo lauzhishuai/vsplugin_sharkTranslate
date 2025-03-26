@@ -8,7 +8,6 @@
 ## Requirements
 
 - 使用前vscode setting.json 中配置：sharkTranslate.sharkPrefix（shark替换时需要删除的前缀）、sharkTranslate.sharkStoreVar（shark存储变量名，默认language无需配置）
-![alt text](image.png)
 例如：
 ```
  "sharkTranslate.sharkPrefix": [
