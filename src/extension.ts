@@ -6,6 +6,7 @@ export function activate(context: vscode.ExtensionContext) {
   
   // 选中内容替换
   let disposableOneSharkReplace = vscode.commands.registerCommand('sharkTranslate.oneSharkReplace', () => {
+
       replaceConfigValue();
   });
   
@@ -96,6 +97,8 @@ export function activate(context: vscode.ExtensionContext) {
           const textRange = new vscode.Range(firstLine.range.start, lastLine.range.end);
           editBuilder.replace(textRange, newText);
       });
+    } else {
+      vscode.window.showErrorMessage('未读取到shark配置文件或未正确获取到工作区，请检查');
     }
   });
 
@@ -129,25 +132,37 @@ async function replaceConfigValue() {
     }
   });
 
+  // 获取用户配置的shark前缀
+  const sharkPrefix = vscode.workspace.getConfiguration().get('sharkTranslate.sharkPrefix') as Array<string>;
+  const sharkStoreVar = vscode.workspace.getConfiguration().get('sharkTranslate.sharkStoreVar') as string;
+
   if (editor && result.length) {
 
     const currentCursorPosition = editor.selection.active;
     const selectedText = editor.document.getText(editor.selection) || '';
-    const currentWord = editor.document.getText(editor.document.getWordRangeAtPosition(currentCursorPosition));
     
-    const sharkObj = result.find(item=>item['Origin'] === selectedText) || {};
+    const sharkObj = result.find(item => item['Origin'] === selectedText) || {};
 
-    if (sharkObj['Origin']) {
+    if (sharkObj['Origin'] && sharkObj['TransKey']) {
+
+      let transKey = '';
+      const hasPrefix = sharkPrefix.find(item =>sharkObj['TransKey'] .startsWith(item))
+      if (hasPrefix) {
+        transKey = `${sharkStoreVar}['${removeText(sharkObj['TransKey'], hasPrefix)}']`;
+      } else {
+        transKey = `${sharkStoreVar}['${sharkObj['TransKey']}']`;
+      }
+
       const replaceOption = {
           title: 'Shark Replace',
-          tooltip: `确定使用 "${sharkObj['TransKey']||''}" 替换 "${selectedText}"`,
+          tooltip: `确定使用 "${transKey || ''}" 替换 "${selectedText}"`,
       };
 
-      vscode.window.showInformationMessage(`确定使用 "${sharkObj['TransKey']||''}" 替换 "${selectedText}"`, replaceOption)
+      vscode.window.showInformationMessage(`确定使用 "${transKey||''}" 替换 "${selectedText}"`, replaceOption)
           .then((value) => {
               if (value === replaceOption && currentCursorPosition) {
                 editor.edit((editBuilder) => {
-                    editBuilder.replace(editor.selection, sharkObj['TransKey']||'');
+                    editBuilder.replace(editor.selection, transKey||'');
                   });
               }
           });
