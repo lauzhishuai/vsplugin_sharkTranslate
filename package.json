@@ -2,7 +2,7 @@
   "name": "shark-translate",
   "displayName": "SharkTranslate",
   "description": "中文转shark",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "zs-liu",
   "engines": {
     "vscode": "^1.78.0"
@@ -12,7 +12,9 @@
   ],
   "activationEvents": [
     "onCommand:sharkTranslate.oneSharkReplace",
-    "onCommand:sharkTranslate.allSharkReplace"
+    "onCommand:sharkTranslate.allSharkReplace",
+    "onCommand:sharkTranslate.exportChineseByPage",
+    "onCommand:sharkTranslate.exportChineseByPageId"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -24,6 +26,14 @@
       {
         "command": "sharkTranslate.allSharkReplace",
         "title": "allSharkReplace"
+      },
+      {
+        "command": "sharkTranslate.exportChineseByPageId",
+        "title": "导出项目中的中文到Excel(默认扫描src目录)"
+      },
+      {
+        "command": "sharkTranslate.exportChineseByPage",
+        "title": "导出当前文件/文件夹中的中文到Excel"
       }
     ],
     "menus": {
@@ -40,6 +50,18 @@
           "group": "navigation",
           "when": "editorTextFocus && !editorReadonly"
         }
+      ],
+      "explorer/context": [
+        {
+          "command": "sharkTranslate.exportChineseByPageId",
+          "title": "导出项目中的中文到Excel(默认扫描src目录)",
+          "group": "navigation"
+        },
+        {
+          "command": "sharkTranslate.exportChineseByPage",
+          "title": "导出当前文件/文件夹中的中文到Excel",
+          "group": "navigation"
+        }
       ]
     },
     "configuration": {
@@ -55,6 +77,11 @@
           "type": "array",
           "default": [],
           "description": "配置页面shark前缀，用于替换时快捷去除通用前缀"
+        },
+        "sharkTranslate.scanSrcPath": {
+          "type": "string",
+          "default": "src",
+          "description": "扫描中文的源目录路径，相对于项目根目录，默认为 src"
         }
       }
     }
