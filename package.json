@@ -2,7 +2,7 @@
   "name": "shark-translate",
   "displayName": "SharkTranslate",
   "description": "中文转shark",
-  "version": "0.0.6",
+  "version": "0.0.8",
   "publisher": "zs-liu",
   "engines": {
     "vscode": "^1.78.0"
@@ -82,6 +82,11 @@
           "type": "string",
           "default": "src",
           "description": "扫描中文的源目录路径，相对于项目根目录，默认为 src"
+        },
+        "sharkTranslate.scanExcludePatterns": {
+          "type": "array",
+          "default": [],
+          "description": "扫描时排除的文件或文件夹（glob 模式），例如: [\"**/components/**\", \"**/utils/helper.ts\"]（仅对 exportChineseByPageId 命令生效）"
         }
       }
     }

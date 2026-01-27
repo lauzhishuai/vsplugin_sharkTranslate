@@ -4,6 +4,18 @@ All notable changes to the "sharkTranslate" extension will be documented in this
 
 Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
 
+## [0.0.7]
+
+### Added
+- 新增配置项 `sharkTranslate.scanExcludePatterns`：支持配置扫描排除模式（glob 模式）
+  - 可以灵活排除不需要扫描的文件和目录
+  - 仅对 `exportChineseByPageId` 命令生效
+  - 支持 glob 模式，如 `**/components/**`、`**/*.test.ts` 等
+
+### Improved
+- 优化扫描性能，支持更灵活的路径过滤
+- 改进错误提示信息
+
 ## [0.0.6]
 
 ### Added

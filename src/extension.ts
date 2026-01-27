@@ -59,8 +59,11 @@ export function activate(context: vscode.ExtensionContext) {
       comments.push({ start: match.index, end: match.index + match[0].length });
     }
 
-    // 匹配非注释部分英文引号中的字符
-    const chinesePattern = /['"]((?=[^'"\n]*[\u4e00-\u9fa5])[^'"\n]+)['"]/g;
+    // 匹配非注释部分英文引号中的字符（改进版：正确处理转义）
+    // 先匹配完整的字符串字面量（单引号或双引号），然后检查是否包含中文
+    // 使用更精确的匹配，确保从开始引号匹配到对应的结束引号
+    // 改进：使用更严格的匹配，确保匹配的是完整的字符串字面量
+    const chinesePattern = /(['"])((?:(?!\1)[^\\\r\n]|\\.)*?)\1/g;
 
     const sharkFile = path.join(vscode.workspace.rootPath || '', 'shark.xlsx'); // 项目中shark的配置文件
     let keys: string[] = [];
@@ -87,23 +90,57 @@ export function activate(context: vscode.ExtensionContext) {
     
     if (editor && result.length) {
       // 替换非注释部分的中文字符
-      const newText = text.replace(chinesePattern, (match, p1, p2, offset) => {
-        const isInComment = comments.some(comment => p2 >= comment.start && p2 <= comment.end);
+      // 使用更安全的方式：先找到所有匹配，然后逐个处理
+      const matches: Array<{match: string, quote: string, content: string, start: number, end: number}> = [];
+      let match;
+      // 重置正则的 lastIndex
+      chinesePattern.lastIndex = 0;
+      while ((match = chinesePattern.exec(text)) !== null) {
+        const matchStart = match.index;
+        const matchEnd = match.index + match[0].length;
+        const isInComment = comments.some(comment => matchStart >= comment.start && matchEnd <= comment.end);
         if (!isInComment) {
-          const content = match.slice(1, -1); // 去掉引号
-          for (const { Origin, TransKey } of result) {
-            if (Origin === content) {
-              const hasPrefix = sharkPrefix.find(item => TransKey.startsWith(item));
-              if (hasPrefix) {
-                return `${sharkStoreVar}['${removeText(TransKey, hasPrefix)}']`;
-              } else {
-                return `${sharkStoreVar}['${TransKey}']`;
+          const content = match[2];
+          const hasChinese = /[\u4e00-\u9fa5]/.test(content);
+          if (hasChinese) {
+            matches.push({
+              match: match[0],
+              quote: match[1],
+              content: content,
+              start: matchStart,
+              end: matchEnd
+            });
+          }
+        }
+      }
+      
+      // 从后往前替换，避免位置偏移问题
+      let newText = text;
+      for (let i = matches.length - 1; i >= 0; i--) {
+        const { content, start, end } = matches[i];
+        // 验证匹配的确实是完整的字符串（开始和结束都是引号，且内容匹配）
+        const startChar = text[start];
+        const endChar = text[end - 1];
+        if (startChar === endChar && (startChar === "'" || startChar === '"')) {
+          // 再次验证：确保匹配的内容确实是引号内的内容
+          const actualContent = text.substring(start + 1, end - 1);
+          if (actualContent === content) {
+            for (const { Origin, TransKey } of result) {
+              if (Origin === content) {
+                const hasPrefix = sharkPrefix.find(item => TransKey.startsWith(item));
+                let replacement;
+                if (hasPrefix) {
+                  replacement = `${sharkStoreVar}['${removeText(TransKey, hasPrefix)}']`;
+                } else {
+                  replacement = `${sharkStoreVar}['${TransKey}']`;
+                }
+                newText = newText.substring(0, start) + replacement + newText.substring(end);
+                break;
               }
             }
           }
         }
-        return match;
-      });
+      }
 
       // 创建一个编辑器编辑操作
       editor.edit(editBuilder => {
@@ -219,8 +256,11 @@ function extractChineseFromText(text: string): string[] {
     comments.push({ start: match.index, end: match.index + match[0].length });
   }
 
-  // 匹配非注释部分英文引号中的字符
-  const chinesePattern = /['"]((?=[^'"\n]*[\u4e00-\u9fa5])[^'"\n]+)['"]/g;
+  // 匹配非注释部分英文引号中的字符（改进版：正确处理转义）
+  // 先匹配完整的字符串字面量（单引号或双引号），然后检查是否包含中文
+  // 使用更精确的匹配，确保从开始引号匹配到对应的结束引号
+  // 改进：使用更严格的匹配，避免匹配到字符串外的引号
+  const chinesePattern = /(['"])((?:(?!\1)[^\\\r\n]|\\.)*?)\1/g;
   
   while ((match = chinesePattern.exec(text)) !== null) {
     const matchStart = match.index;
@@ -230,10 +270,14 @@ function extractChineseFromText(text: string): string[] {
     const isInComment = comments.some(comment => matchStart >= comment.start && matchEnd <= comment.end);
     
     if (!isInComment) {
-      const content = match[1]; // 提取引号内的内容
-      // 去重
-      if (!chineseList.includes(content)) {
-        chineseList.push(content);
+      const content = match[2]; // 提取引号内的内容（第二个捕获组）
+      // 检查内容是否包含中文
+      const hasChinese = /[\u4e00-\u9fa5]/.test(content);
+      if (hasChinese) {
+        // 去重
+        if (!chineseList.includes(content)) {
+          chineseList.push(content);
+        }
       }
     }
   }
@@ -518,6 +562,9 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
   const scanSrcPath = vscode.workspace.getConfiguration().get('sharkTranslate.scanSrcPath') as string || 'src';
   const srcRoot = path.join(workspaceFolder.uri.fsPath, scanSrcPath);
 
+  // 获取用户配置的排除模式
+  const userExcludePatterns = vscode.workspace.getConfiguration().get('sharkTranslate.scanExcludePatterns') as string[] || [];
+
   // 检查 src 目录是否存在
   if (!fs.existsSync(srcRoot)) {
     vscode.window.showErrorMessage(`扫描目录不存在: ${srcRoot}，请检查配置 sharkTranslate.scanSrcPath`);
@@ -552,7 +599,8 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
       '**/*.test.ts',
       '**/*.test.tsx',
       '**/*.spec.ts',
-      '**/*.spec.tsx'
+      '**/*.spec.tsx',
+      ...userExcludePatterns
     ];
 
     const allFiles: string[] = [];
