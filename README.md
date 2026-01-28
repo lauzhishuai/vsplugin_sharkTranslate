@@ -26,9 +26,9 @@
 **配置示例：**
 ```json
 {
-  "sharkTranslate.sharkPrefix": [
-    "key.adresource"
-  ],
+ "sharkTranslate.sharkPrefix": [
+      "key.adresource"
+    ],
   "sharkTranslate.sharkStoreVar": "language",
   "sharkTranslate.scanSrcPath": "src",
   "sharkTranslate.scanExcludePatterns": [

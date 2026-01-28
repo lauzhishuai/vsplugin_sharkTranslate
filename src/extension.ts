@@ -465,7 +465,7 @@ function extractInfoFromController(controllerPath: string): ControllerInfo {
     
     // 匹配 pageId = 数字 或 pageId: 数字 的格式
     const pageIdMatch = content.match(/pageId\s*[=:]\s*(\d+)/);
-    const pageId = (pageIdMatch && pageIdMatch[1]) ? pageIdMatch[1] : null;
+    const pageId = (pageIdMatch && pageIdMatch[1] && pageIdMatch[1] !== '0') ? pageIdMatch[1] : null;
     
     // 匹配 pageName = ['xxx', 'yyy'] 或 pageName: ['xxx', 'yyy'] 的格式
     const pageNameMatch = content.match(/pageName\s*[=:]\s*\[([^\]]*)\]/);
