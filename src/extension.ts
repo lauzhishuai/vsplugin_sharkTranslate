@@ -465,7 +465,7 @@ function extractInfoFromController(controllerPath: string): ControllerInfo {
     
     // 匹配 pageId = 数字 或 pageId: 数字 的格式
     const pageIdMatch = content.match(/pageId\s*[=:]\s*(\d+)/);
-    const pageId = (pageIdMatch && pageIdMatch[1] && pageIdMatch[1] !== '0') ? pageIdMatch[1] : null;
+    const pageId = (pageIdMatch && pageIdMatch[1]) ? pageIdMatch[1] : null;
     
     // 匹配 pageName = ['xxx', 'yyy'] 或 pageName: ['xxx', 'yyy'] 的格式
     const pageNameMatch = content.match(/pageName\s*[=:]\s*\[([^\]]*)\]/);
@@ -669,7 +669,7 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
     progress.report({ increment: 20, message: "正在生成 Excel 文件..." });
 
     // 生成 Excel 数据
-    const excelData: { pageId: string; pageName: string; chinese: string }[] = [];
+    const excelData: { pageId: string; pageName: string; chinese: string; key: string }[] = [];
     
     // 对 pageId 进行排序，数字类型的 pageId 放在前面
     const sortedPageIds = Array.from(pageChineseMap.keys()).sort((a, b) => {
@@ -685,8 +685,11 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
     
     sortedPageIds.forEach(pageId => {
       const { pageName, chineseSet } = pageChineseMap.get(pageId)!;
+      // 判断 pageId 是否为有效数字，如果是则生成 key，否则为空
+      const isValidPageId = /^\d+$/.test(pageId);
+      const key = isValidPageId ? `key.${pageId}.` : '';
       chineseSet.forEach(chinese => {
-        excelData.push({ pageId, pageName, chinese });
+        excelData.push({ pageId, pageName, chinese, key });
       });
     });
 
@@ -703,7 +706,8 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
     worksheet.columns = [
       { header: 'pageId', key: 'pageId', width: 20 },
       { header: 'pageName', key: 'pageName', width: 40 },
-      { header: '中文', key: 'chinese', width: 50 }
+      { header: '中文', key: 'chinese', width: 50 },
+      { header: 'key', key: 'key', width: 30 }
     ];
 
     // 设置表头样式
