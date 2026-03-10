@@ -2,7 +2,7 @@
   "name": "shark-translate",
   "displayName": "SharkTranslate",
   "description": "中文转shark",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "publisher": "zs-liu",
   "engines": {
     "vscode": "^1.78.0"
@@ -103,7 +103,8 @@
     "test": "node ./out/test/runTest.js"
   },
   "dependencies": {
-    "exceljs": "^4.3.0"
+    "exceljs": "^4.3.0",
+    "opencc-js": "^1.0.5"
   },
   "devDependencies": {
     "@types/glob": "^8.1.0",
