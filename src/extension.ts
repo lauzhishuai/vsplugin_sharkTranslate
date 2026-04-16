@@ -273,6 +273,43 @@ interface RealtimeTranslationResult {
   th: string;
 }
 
+function formatEnglishForTransKey(englishText: string): string {
+  const slug = englishText
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .replace(/_+/g, '_');
+
+  if (!slug) {
+    return '请手动输入TransKey';
+  }
+
+  if (slug.length <= 50) {
+    return slug;
+  }
+
+  // 长文本采用“可读 slug 前缀 + 短哈希”，兼顾可读性和唯一性
+  let hashValue = 0;
+  for (let i = 0; i < englishText.length; i++) {
+    hashValue = ((hashValue << 5) - hashValue + englishText.charCodeAt(i)) | 0;
+  }
+  const hash = Math.abs(hashValue).toString(36).slice(0, 6).padStart(6, '0');
+  const maxPrefixLength = 50 - 1 - hash.length;
+  const prefix = slug.slice(0, maxPrefixLength).replace(/_+$/g, '') || '请手动输入TransKey';
+  return `${prefix}_${hash}`;
+}
+
+function buildTransKeyForDocument(documentPath: string, englishText: string): string {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    return `key.common.${formatEnglishForTransKey(englishText)}`;
+  }
+
+  const pageInfo = findPageInfoForFile(documentPath, workspaceFolder.uri.fsPath);
+  const pageId = pageInfo.pageId && pageInfo.pageId.trim() ? pageInfo.pageId.trim() : 'common';
+  return `key.${pageId}.${formatEnglishForTransKey(englishText)}`;
+}
+
 function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationResult> {
   const config = vscode.workspace.getConfiguration();
   const apiKey = config.get('sharkTranslate.realtimeTranslateApiKey') as string || '';
@@ -367,7 +404,7 @@ function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationR
   return requestOnce(apiUrl);
 }
 
-async function appendRealtimeTranslationToExcel(chinese: string, translated: RealtimeTranslationResult) {
+async function appendRealtimeTranslationToExcel(chinese: string, translated: RealtimeTranslationResult, transKey: string) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
     throw new Error('未找到工作区，请先打开一个工作区');
@@ -390,7 +427,8 @@ async function appendRealtimeTranslationToExcel(chinese: string, translated: Rea
       { header: 'en-US', key: 'en-US', width: 40 },
       { header: 'ja-JP', key: 'ja-JP', width: 40 },
       { header: 'ko-KR', key: 'ko-KR', width: 40 },
-      { header: 'th-TH', key: 'th-TH', width: 40 }
+      { header: 'th-TH', key: 'th-TH', width: 40 },
+      { header: 'TransKey', key: 'TransKey', width: 50 }
     ];
     worksheet.getRow(1).font = { bold: true };
     worksheet.getRow(1).fill = {
@@ -400,7 +438,12 @@ async function appendRealtimeTranslationToExcel(chinese: string, translated: Rea
     };
   }
 
-  worksheet.addRow([chinese, translated.en, translated.ja, translated.ko, translated.th]);
+  if (worksheet.getCell('F1').value !== 'TransKey') {
+    worksheet.getCell('F1').value = 'TransKey';
+    worksheet.getColumn(6).width = 50;
+  }
+
+  worksheet.addRow([chinese, translated.en, translated.ja, translated.ko, translated.th, transKey]);
 
   await workbook.xlsx.writeFile(outputPath);
   return outputPath;
@@ -425,9 +468,10 @@ async function translateSelectionToExcel() {
       title: '正在实时翻译选中文本...',
       cancellable: false
     }, async () => requestRealtimeTranslations(selectedText));
+    const transKey = buildTransKeyForDocument(editor.document.uri.fsPath, translated.en);
 
     const confirm = await vscode.window.showInformationMessage(
-      `翻译完成，是否写入 Excel？\nEN: ${translated.en}\nJA: ${translated.ja}\nKO: ${translated.ko}\nTH: ${translated.th}`,
+      `翻译完成，是否写入 Excel？\nEN: ${translated.en}\nJA: ${translated.ja}\nKO: ${translated.ko}\nTH: ${translated.th}\nTransKey: ${transKey}`,
       { modal: true },
       '确认写入',
       '取消'
@@ -437,7 +481,7 @@ async function translateSelectionToExcel() {
       return;
     }
 
-    const outputPath = await appendRealtimeTranslationToExcel(selectedText, translated);
+    const outputPath = await appendRealtimeTranslationToExcel(selectedText, translated, transKey);
     vscode.window.showInformationMessage(`已写入 ${path.basename(outputPath)}`, '打开文件').then(selection => {
       if (selection === '打开文件') {
         vscode.commands.executeCommand('vscode.open', vscode.Uri.file(outputPath));
