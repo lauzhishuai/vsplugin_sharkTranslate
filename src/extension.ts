@@ -1,8 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as http from 'http';
 import * as ExcelJS from 'exceljs';
 import { glob } from 'glob';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const openCC = require('opencc-js');
 
 // 封装 glob 调用，兼容不同版本
 async function globAsync(pattern: string, options: { cwd: string; ignore: string[]; absolute: boolean }): Promise<string[]> {
@@ -15,6 +18,19 @@ async function globAsync(pattern: string, options: { cwd: string; ignore: string
       }
     });
   });
+}
+
+const s2hkConverter = (() => {
+  try {
+    return openCC.Converter({ from: 'cn', to: 'hk' }) as (input: string) => string;
+  } catch (error) {
+    console.error('初始化 opencc-js 转换器失败，zh-HK 列将回退为原文:', error);
+    return (input: string) => input;
+  }
+})();
+
+function toZhHk(text: string): string {
+  return s2hkConverter(text);
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -164,10 +180,16 @@ export function activate(context: vscode.ExtensionContext) {
     await exportChineseByPageId(uri);
   });
 
+  // 选中文本实时翻译并写入 Excel
+  let disposableTranslateSelectionToExcel = vscode.commands.registerCommand('sharkTranslate.translateSelectionToExcel', async function () {
+    await translateSelectionToExcel();
+  });
+
   context.subscriptions.push(disposableOneSharkReplace);
   context.subscriptions.push(disposableAllSharkReplace);
   context.subscriptions.push(disposableExportChineseByPage);
   context.subscriptions.push(disposableExportChineseByPageId);
+  context.subscriptions.push(disposableTranslateSelectionToExcel);
 }
 
 async function replaceConfigValue() {
@@ -242,6 +264,188 @@ async function replaceConfigValue() {
 function removeText(originalText: string, textToRemove: string) {
   const regex = new RegExp(textToRemove, 'g');
   return originalText.replace(regex, '');
+}
+
+interface RealtimeTranslationResult {
+  en: string;
+  ja: string;
+  ko: string;
+  th: string;
+}
+
+function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationResult> {
+  const config = vscode.workspace.getConfiguration();
+  const apiKey = config.get('sharkTranslate.realtimeTranslateApiKey') as string || '';
+  const apiUrl = config.get('sharkTranslate.realtimeTranslateApiUrl') as string || '';
+  const model = config.get('sharkTranslate.realtimeTranslateModel') as string || 'kimi-k2.5';
+
+  if (!apiKey.trim()) {
+    throw new Error('未配置 sharkTranslate.realtimeTranslateApiKey，请先在插件设置中配置。');
+  }
+  if(!apiUrl.trim()) {
+    throw new Error('未配置 sharkTranslate.realtimeTranslateApiUrl，请先在插件设置中配置。');
+  }
+
+  const payload = JSON.stringify({
+    model,
+    temperature: 0.2,
+    messages: [
+      {
+        role: 'system',
+        content: '你是翻译助手。请把用户提供的中文翻译成英文、日语、韩语、泰语，并只返回 JSON，键名固定为 en、ja、ko、th。'
+      },
+      {
+        role: 'user',
+        content: `请翻译这段中文：${text}`
+      }
+    ]
+  });
+
+  const parseResponse = (data: string): RealtimeTranslationResult => {
+    const json = JSON.parse(data);
+    const content = json?.choices?.[0]?.message?.content;
+    if (!content) {
+      throw new Error('模型返回内容为空');
+    }
+    const normalizedContent = content.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+    const parsed = JSON.parse(normalizedContent) as Partial<RealtimeTranslationResult>;
+    return {
+      en: parsed.en || '',
+      ja: parsed.ja || '',
+      ko: parsed.ko || '',
+      th: parsed.th || ''
+    };
+  };
+
+  const requestOnce = (targetUrl: string): Promise<RealtimeTranslationResult> => {
+    return new Promise((resolve, reject) => {
+      const parsedUrl = new URL(targetUrl);
+      if (parsedUrl.protocol !== 'http:') {
+        reject(new Error(`当前仅支持 http 网关，请将 apiUrl 改为 http:// 开头。当前值：${targetUrl}`));
+        return;
+      }
+      const requestHeaders: Record<string, string | number> = {};
+      requestHeaders['Content-Type'] = 'application/json';
+      requestHeaders['Authorization'] = `Bearer ${apiKey}`;
+      requestHeaders['Content-Length'] = Buffer.byteLength(payload);
+
+      const request = http.request({
+        protocol: parsedUrl.protocol,
+        hostname: parsedUrl.hostname,
+        port: parsedUrl.port || 80,
+        path: `${parsedUrl.pathname}${parsedUrl.search}`,
+        method: 'POST',
+        headers: requestHeaders
+      }, response => {
+        let data = '';
+        response.on('data', chunk => {
+          data += chunk;
+        });
+        response.on('end', () => {
+          if ((response.statusCode || 500) >= 400) {
+            reject(new Error(`翻译请求失败(${response.statusCode})：${data}`));
+            return;
+          }
+
+          try {
+            resolve(parseResponse(data));
+          } catch (error) {
+            reject(new Error(`解析翻译结果失败: ${error instanceof Error ? error.message : String(error)}`));
+          }
+        });
+      });
+
+      request.on('error', error => {
+        reject(new Error(`调用翻译接口失败: ${error.message}`));
+      });
+
+      request.write(payload);
+      request.end();
+    });
+  };
+
+  return requestOnce(apiUrl);
+}
+
+async function appendRealtimeTranslationToExcel(chinese: string, translated: RealtimeTranslationResult) {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    throw new Error('未找到工作区，请先打开一个工作区');
+  }
+
+  const config = vscode.workspace.getConfiguration();
+  const excelFileName = config.get('sharkTranslate.realtimeTranslateExcelFile') as string || 'realtime_translate.xlsx';
+  const outputPath = path.join(workspaceFolder.uri.fsPath, excelFileName);
+
+  const workbook = new ExcelJS.Workbook();
+  let worksheet: ExcelJS.Worksheet;
+
+  if (fs.existsSync(outputPath)) {
+    await workbook.xlsx.readFile(outputPath);
+    worksheet = workbook.getWorksheet('实时翻译') || workbook.getWorksheet(1) || workbook.addWorksheet('实时翻译');
+  } else {
+    worksheet = workbook.addWorksheet('实时翻译');
+    worksheet.columns = [
+      { header: 'zh-CN', key: 'zh-CN', width: 40 },
+      { header: 'en-US', key: 'en-US', width: 40 },
+      { header: 'ja-JP', key: 'ja-JP', width: 40 },
+      { header: 'ko-KR', key: 'ko-KR', width: 40 },
+      { header: 'th-TH', key: 'th-TH', width: 40 }
+    ];
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+  }
+
+  worksheet.addRow([chinese, translated.en, translated.ja, translated.ko, translated.th]);
+
+  await workbook.xlsx.writeFile(outputPath);
+  return outputPath;
+}
+
+async function translateSelectionToExcel() {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    vscode.window.showErrorMessage('未找到活动编辑器');
+    return;
+  }
+
+  const selectedText = editor.document.getText(editor.selection).trim();
+  if (!selectedText) {
+    vscode.window.showWarningMessage('请先选中要翻译的中文文本');
+    return;
+  }
+
+  try {
+    const translated = await vscode.window.withProgress({
+      location: vscode.ProgressLocation.Notification,
+      title: '正在实时翻译选中文本...',
+      cancellable: false
+    }, async () => requestRealtimeTranslations(selectedText));
+
+    const confirm = await vscode.window.showInformationMessage(
+      `翻译完成，是否写入 Excel？\nEN: ${translated.en}\nJA: ${translated.ja}\nKO: ${translated.ko}\nTH: ${translated.th}`,
+      { modal: true },
+      '确认写入',
+      '取消'
+    );
+
+    if (confirm !== '确认写入') {
+      return;
+    }
+
+    const outputPath = await appendRealtimeTranslationToExcel(selectedText, translated);
+    vscode.window.showInformationMessage(`已写入 ${path.basename(outputPath)}`, '打开文件').then(selection => {
+      if (selection === '打开文件') {
+        vscode.commands.executeCommand('vscode.open', vscode.Uri.file(outputPath));
+      }
+    });
+  } catch (error) {
+    vscode.window.showErrorMessage(`实时翻译失败：${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 // 从文件内容中提取中文（排除注释）
@@ -410,7 +614,7 @@ async function exportChineseByPage(uri?: vscode.Uri) {
     progress.report({ increment: 20, message: "正在生成 Excel 文件..." });
 
     // 生成 Excel 数据
-    const excelData: { pageId: string; pageName: string; Origin: string; 'zh-CN': string; TransKey: string }[] = [];
+    const excelData: { pageId: string; pageName: string; Origin: string; 'zh-CN': string; 'zh-HK': string; TransKey: string }[] = [];
     
     // 对 pageId 进行排序，数字类型的 pageId 放在前面
     const sortedPageIds = Array.from(pageChineseMap.keys()).sort((a, b) => {
@@ -430,7 +634,7 @@ async function exportChineseByPage(uri?: vscode.Uri) {
       const isValidPageId = /^\d+$/.test(pageId);
       const key = isValidPageId ? `key.${pageId}.` : '';
       chineseSet.forEach(chinese => {
-        excelData.push({ pageId, pageName, Origin: chinese, 'zh-CN': chinese, TransKey: key });
+        excelData.push({ pageId, pageName, Origin: chinese, 'zh-CN': chinese, 'zh-HK': toZhHk(chinese), TransKey: key });
       });
     });
 
@@ -449,6 +653,7 @@ async function exportChineseByPage(uri?: vscode.Uri) {
       { header: 'pageName', key: 'pageName', width: 40 },
       { header: 'Origin', key: 'Origin', width: 50 },
       { header: 'zh-CN', key: 'zh-CN', width: 50 },
+      { header: 'zh-HK', key: 'zh-HK', width: 50 },
       { header: 'TransKey', key: 'TransKey', width: 30 }
     ];
 
@@ -702,7 +907,7 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
     progress.report({ increment: 20, message: "正在生成 Excel 文件..." });
 
     // 生成 Excel 数据
-    const excelData: { pageId: string; pageName: string; Origin: string; 'zh-CN': string; TransKey: string }[] = [];
+    const excelData: { pageId: string; pageName: string; Origin: string; 'zh-CN': string; 'zh-HK': string; TransKey: string }[] = [];
 
     // 对 pageId 进行排序，数字类型的 pageId 放在前面
     const sortedPageIds = Array.from(pageChineseMap.keys()).sort((a, b) => {
@@ -722,7 +927,7 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
       const isValidPageId = /^\d+$/.test(pageId);
       const key = isValidPageId ? `key.${pageId}.` : '';
       chineseSet.forEach(chinese => {
-        excelData.push({ pageId, pageName, Origin: chinese, 'zh-CN': chinese, TransKey: key });
+        excelData.push({ pageId, pageName, Origin: chinese, 'zh-CN': chinese, 'zh-HK': toZhHk(chinese), TransKey: key });
       });
     });
 
@@ -741,6 +946,7 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
       { header: 'pageName', key: 'pageName', width: 40 },
       { header: 'Origin', key: 'Origin', width: 50 },
       { header: 'zh-CN', key: 'zh-CN', width: 50 },
+      { header: 'zh-HK', key: 'zh-HK', width: 50 },
       { header: 'TransKey', key: 'TransKey', width: 30 }
     ];
 

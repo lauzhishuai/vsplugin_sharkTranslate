@@ -2,7 +2,7 @@
   "name": "shark-translate",
   "displayName": "SharkTranslate",
   "description": "中文转shark",
-  "version": "0.0.10",
+  "version": "0.0.12",
   "publisher": "zs-liu",
   "engines": {
     "vscode": "^1.78.0"
@@ -14,7 +14,8 @@
     "onCommand:sharkTranslate.oneSharkReplace",
     "onCommand:sharkTranslate.allSharkReplace",
     "onCommand:sharkTranslate.exportChineseByPage",
-    "onCommand:sharkTranslate.exportChineseByPageId"
+    "onCommand:sharkTranslate.exportChineseByPageId",
+    "onCommand:sharkTranslate.translateSelectionToExcel"
   ],
   "main": "./dist/extension.js",
   "contributes": {
@@ -34,6 +35,10 @@
       {
         "command": "sharkTranslate.exportChineseByPage",
         "title": "导出当前文件/文件夹中的中文到Excel"
+      },
+      {
+        "command": "sharkTranslate.translateSelectionToExcel",
+        "title": "实时翻译选中文本并写入Excel"
       }
     ],
     "menus": {
@@ -49,6 +54,12 @@
           "title": "allSharkReplace",
           "group": "navigation",
           "when": "editorTextFocus && !editorReadonly"
+        },
+        {
+          "command": "sharkTranslate.translateSelectionToExcel",
+          "title": "实时翻译选中文本并写入Excel",
+          "group": "navigation",
+          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
         }
       ],
       "explorer/context": [
@@ -87,6 +98,26 @@
           "type": "array",
           "default": [],
           "description": "扫描时排除的文件或文件夹（glob 模式），例如: [\"**/components/**\", \"**/utils/helper.ts\"]（仅对 exportChineseByPageId 命令生效）"
+        },
+        "sharkTranslate.realtimeTranslateApiUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1/chat/completions",
+          "description": "实时翻译接口地址（OpenAI兼容）"
+        },
+        "sharkTranslate.realtimeTranslateApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "实时翻译接口密钥（Bearer Token）"
+        },
+        "sharkTranslate.realtimeTranslateModel": {
+          "type": "string",
+          "default": "gpt-4o-mini",
+          "description": "实时翻译模型名称"
+        },
+        "sharkTranslate.realtimeTranslateExcelFile": {
+          "type": "string",
+          "default": "realtime_translate.xlsx",
+          "description": "实时翻译写入的Excel文件名（位于工作区根目录）"
         }
       }
     }
