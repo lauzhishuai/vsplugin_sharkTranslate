@@ -15,63 +15,73 @@
     "onCommand:sharkTranslate.allSharkReplace",
     "onCommand:sharkTranslate.exportChineseByPage",
     "onCommand:sharkTranslate.exportChineseByPageId",
-    "onCommand:sharkTranslate.translateSelectionToExcel"
+    "onCommand:sharkTranslate.translateSelectionToExcel",
+    "onCommand:sharkTranslate.batchTranslateChineseToExcel"
   ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
         "command": "sharkTranslate.oneSharkReplace",
-        "title": "oneSharkReplace"
+        "title": "Trip Shark点替"
       },
       {
         "command": "sharkTranslate.allSharkReplace",
-        "title": "allSharkReplace"
+        "title": "Trip Shark全替"
       },
       {
         "command": "sharkTranslate.exportChineseByPageId",
-        "title": "导出项目中的中文到Excel(默认扫描src目录)"
+        "title": "Trip Shark中文全域巡检(默认扫描src目录)"
       },
       {
         "command": "sharkTranslate.exportChineseByPage",
-        "title": "导出当前文件/文件夹中的中文到Excel"
+        "title": "Trip Shark中文定域巡检"
       },
       {
         "command": "sharkTranslate.translateSelectionToExcel",
-        "title": "实时翻译选中文本并写入Excel"
+        "title": "Trip Shark闪译(单条)"
+      },
+      {
+        "command": "sharkTranslate.batchTranslateChineseToExcel",
+        "title": "Trip Shark批译(批量)"
       }
     ],
     "menus": {
       "editor/context": [
         {
+          "command": "sharkTranslate.translateSelectionToExcel",
+          "title": "Trip Shark闪译(单条)",
+          "group": "navigation",
+          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
+        },
+        {
           "command": "sharkTranslate.oneSharkReplace",
-          "title": "oneSharkReplace",
+          "title": "Trip Shark点替",
           "group": "navigation",
           "when": "editorTextFocus && !editorReadonly"
         },
         {
           "command": "sharkTranslate.allSharkReplace",
-          "title": "allSharkReplace",
+          "title": "Trip Shark全替",
           "group": "navigation",
           "when": "editorTextFocus && !editorReadonly"
-        },
-        {
-          "command": "sharkTranslate.translateSelectionToExcel",
-          "title": "实时翻译选中文本并写入Excel",
-          "group": "navigation",
-          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
         }
       ],
       "explorer/context": [
         {
-          "command": "sharkTranslate.exportChineseByPageId",
-          "title": "导出项目中的中文到Excel(默认扫描src目录)",
+          "command": "sharkTranslate.batchTranslateChineseToExcel",
+          "title": "Trip Shark批译(批量)",
           "group": "navigation@1"
         },
         {
-          "command": "sharkTranslate.exportChineseByPage",
-          "title": "导出当前文件/文件夹中的中文到Excel",
+          "command": "sharkTranslate.exportChineseByPageId",
+          "title": "Trip Shrak中文全域巡检(默认扫描src目录)",
           "group": "navigation@2"
+        },
+        {
+          "command": "sharkTranslate.exportChineseByPage",
+          "title": "Trip Shark中文定域巡检",
+          "group": "navigation@3"
         }
       ]
     },

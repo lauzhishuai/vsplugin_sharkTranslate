@@ -185,11 +185,17 @@ export function activate(context: vscode.ExtensionContext) {
     await translateSelectionToExcel();
   });
 
+  // 批量识别并翻译文件/文件夹中的中文到 Excel
+  let disposableBatchTranslateChineseToExcel = vscode.commands.registerCommand('sharkTranslate.batchTranslateChineseToExcel', async function (uri?: vscode.Uri) {
+    await batchTranslateChineseToExcel(uri);
+  });
+
   context.subscriptions.push(disposableOneSharkReplace);
   context.subscriptions.push(disposableAllSharkReplace);
   context.subscriptions.push(disposableExportChineseByPage);
   context.subscriptions.push(disposableExportChineseByPageId);
   context.subscriptions.push(disposableTranslateSelectionToExcel);
+  context.subscriptions.push(disposableBatchTranslateChineseToExcel);
 }
 
 async function replaceConfigValue() {
@@ -490,6 +496,174 @@ async function translateSelectionToExcel() {
   } catch (error) {
     vscode.window.showErrorMessage(`实时翻译失败：${error instanceof Error ? error.message : String(error)}`);
   }
+}
+
+function buildTransKeyByPageId(pageId: string, englishText: string): string {
+  const normalizedPageId = pageId && pageId.trim() ? pageId.trim() : 'common';
+  return `key.${normalizedPageId}.${formatEnglishForTransKey(englishText)}`;
+}
+
+async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+  if (!workspaceFolder) {
+    vscode.window.showErrorMessage('未找到工作区，请先打开一个工作区');
+    return;
+  }
+
+  // 确定扫描的根目录或单个文件
+  let scanRoot = workspaceFolder.uri.fsPath;
+  let singleFile: string | null = null;
+  if (uri && uri.fsPath) {
+    const stat = fs.statSync(uri.fsPath);
+    if (stat.isDirectory()) {
+      scanRoot = uri.fsPath;
+    } else {
+      singleFile = uri.fsPath;
+      scanRoot = path.dirname(uri.fsPath);
+    }
+  }
+
+  await vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title: singleFile ? '正在批量翻译当前文件中的中文...' : '正在批量翻译文件夹中的中文...',
+    cancellable: false
+  }, async (progress) => {
+    progress.report({ increment: 0, message: '开始扫描文件...' });
+
+    let uniqueFiles: string[] = [];
+    if (singleFile) {
+      uniqueFiles = [singleFile];
+      progress.report({ increment: 20, message: `扫描文件: ${path.basename(singleFile)}` });
+    } else {
+      const filePatterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.vue'];
+      const excludePatterns = ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.git/**', '**/out/**'];
+      const allFiles: string[] = [];
+      for (const pattern of filePatterns) {
+        try {
+          const files = await globAsync(pattern, {
+            cwd: scanRoot,
+            ignore: excludePatterns,
+            absolute: true
+          });
+          allFiles.push(...files);
+        } catch (error) {
+          console.error(`扫描模式 ${pattern} 时出错:`, error);
+        }
+      }
+      uniqueFiles = Array.from(new Set(allFiles));
+      progress.report({ increment: 20, message: `找到 ${uniqueFiles.length} 个文件，开始提取中文...` });
+    }
+
+    const pageChineseMap: Map<string, { pageName: string; chineseSet: Set<string> }> = new Map();
+    for (let i = 0; i < uniqueFiles.length; i++) {
+      const filePath = uniqueFiles[i];
+      try {
+        const fileContent = fs.readFileSync(filePath, 'utf-8');
+        const chineseList = extractChineseFromText(fileContent);
+        if (chineseList.length > 0) {
+          const pageInfo = findPageInfoForFile(filePath, workspaceFolder.uri.fsPath);
+          if (!pageChineseMap.has(pageInfo.pageId)) {
+            pageChineseMap.set(pageInfo.pageId, {
+              pageName: pageInfo.pageName,
+              chineseSet: new Set()
+            });
+          }
+          chineseList.forEach(chinese => {
+            pageChineseMap.get(pageInfo.pageId)!.chineseSet.add(chinese);
+          });
+        }
+      } catch (error) {
+        console.error(`处理文件 ${filePath} 时出错:`, error);
+      }
+    }
+
+    const totalChinese = Array.from(pageChineseMap.values())
+      .reduce((total, item) => total + item.chineseSet.size, 0);
+    if (totalChinese === 0) {
+      vscode.window.showInformationMessage('未找到任何中文内容');
+      return;
+    }
+
+    progress.report({ increment: 20, message: `提取完成，共 ${totalChinese} 条中文，开始批量翻译...` });
+    const sortedPageIds = Array.from(pageChineseMap.keys()).sort((a, b) => {
+      const aIsNumber = /^\d+$/.test(a);
+      const bIsNumber = /^\d+$/.test(b);
+      if (aIsNumber && bIsNumber) {
+        return Number(a) - Number(b);
+      }
+      if (aIsNumber) return -1;
+      if (bIsNumber) return 1;
+      return a.localeCompare(b);
+    });
+
+    const translationCache: Map<string, RealtimeTranslationResult> = new Map();
+    const excelRows: { pageId: string; Origin: string; 'zh-CN': string; 'zh-HK': string; 'en-US': string; 'ja-JP': string; 'ko-KR': string; 'th-TH': string; TransKey: string }[] = [];
+    let translatedCount = 0;
+
+    for (const pageId of sortedPageIds) {
+      const { chineseSet } = pageChineseMap.get(pageId)!;
+      for (const chinese of chineseSet) {
+        let translated = translationCache.get(chinese);
+        if (!translated) {
+          translated = await requestRealtimeTranslations(chinese);
+          translationCache.set(chinese, translated);
+        }
+        const transKey = buildTransKeyByPageId(pageId, translated.en);
+        excelRows.push({
+          pageId,
+          Origin: chinese,
+          'zh-CN': chinese,
+          'zh-HK': toZhHk(chinese),
+          'en-US': translated.en,
+          'ja-JP': translated.ja,
+          'ko-KR': translated.ko,
+          'th-TH': translated.th,
+          TransKey: transKey
+        });
+
+        translatedCount += 1;
+        progress.report({
+          increment: (50 / totalChinese),
+          message: `翻译进度 ${translatedCount}/${totalChinese}`
+        });
+      }
+    }
+
+    progress.report({ increment: 10, message: '正在生成 Excel 文件...' });
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('批量翻译');
+    worksheet.columns = [
+      { header: 'pageId', key: 'pageId', width: 20 },
+      { header: 'Origin', key: 'Origin', width: 50 },
+      { header: 'zh-CN', key: 'zh-CN', width: 50 },
+      { header: 'zh-HK', key: 'zh-HK', width: 50 },
+      { header: 'en-US', key: 'en-US', width: 50 },
+      { header: 'ja-JP', key: 'ja-JP', width: 50 },
+      { header: 'ko-KR', key: 'ko-KR', width: 50 },
+      { header: 'th-TH', key: 'th-TH', width: 50 },
+      { header: 'TransKey', key: 'TransKey', width: 50 }
+    ];
+    worksheet.getRow(1).font = { bold: true };
+    worksheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE0E0E0' }
+    };
+    excelRows.forEach(row => {
+      worksheet.addRow(row);
+    });
+
+    const outputPath = path.join(workspaceFolder.uri.fsPath, 'batch_translate_by_page.xlsx');
+    await workbook.xlsx.writeFile(outputPath);
+    vscode.window.showInformationMessage(
+      `批量翻译完成，共 ${excelRows.length} 条，已导出 ${path.basename(outputPath)}`,
+      '打开文件'
+    ).then(selection => {
+      if (selection === '打开文件') {
+        vscode.commands.executeCommand('vscode.open', vscode.Uri.file(outputPath));
+      }
+    });
+  });
 }
 
 // 从文件内容中提取中文（排除注释）
