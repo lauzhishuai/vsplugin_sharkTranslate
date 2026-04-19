@@ -20,6 +20,99 @@ async function globAsync(pattern: string, options: { cwd: string; ignore: string
   });
 }
 
+interface TranslationEntry {
+  Origin: string;
+  TransKey: string;
+}
+
+function getCandidateTranslationExcelPaths(workspaceRoot: string): string[] {
+  const config = vscode.workspace.getConfiguration();
+  const realtimeFile = config.get('sharkTranslate.realtimeTranslateExcelFile') as string || 'realtime_translate.xlsx';
+  const candidates = [
+    'batch_translate_by_page.xlsx',
+    realtimeFile,
+    'realtime_translate.xlsx'
+  ];
+
+  return Array.from(new Set(candidates)).map(file => path.join(workspaceRoot, file));
+}
+
+function getTranslationLookupRoots(): string[] {
+  const activeEditor = vscode.window.activeTextEditor;
+  if (activeEditor) {
+    const activeWorkspace = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+    if (activeWorkspace?.uri.fsPath) {
+      return [activeWorkspace.uri.fsPath];
+    }
+  }
+
+  const firstWorkspace = vscode.workspace.workspaceFolders?.[0];
+  if (firstWorkspace?.uri.fsPath) {
+    return [firstWorkspace.uri.fsPath];
+  }
+
+  if (vscode.workspace.rootPath) {
+    return [vscode.workspace.rootPath];
+  }
+
+  return [];
+}
+
+async function loadTranslationEntriesFromExcel(): Promise<{ entries: TranslationEntry[]; sourceFile: string }> {
+  const lookupRoots = getTranslationLookupRoots();
+  if (lookupRoots.length === 0) {
+    throw new Error('未找到工作区目录，请先打开一个工作区');
+  }
+
+  const searchedFiles: string[] = [];
+  for (const root of lookupRoots) {
+    const candidateFiles = getCandidateTranslationExcelPaths(root);
+    for (const filePath of candidateFiles) {
+      searchedFiles.push(filePath);
+      if (!fs.existsSync(filePath)) {
+        continue;
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.readFile(filePath);
+      const worksheet = workbook.getWorksheet(1);
+      if (!worksheet) {
+        continue;
+      }
+
+      const keys: string[] = [];
+      const rows: Record<string, string>[] = [];
+      worksheet.eachRow((row, rowNumber) => {
+        const obj: Record<string, string> = {};
+        row.eachCell((cell, colNumber) => {
+          const value = `${cell.value ?? ''}`;
+          if (rowNumber === 1) {
+            keys.push(value);
+          } else {
+            obj[keys[colNumber - 1]] = value;
+          }
+        });
+        if (rowNumber > 1) {
+          rows.push(obj);
+        }
+      });
+
+      const entries: TranslationEntry[] = rows
+        .map(item => ({
+          Origin: item['Origin'] || item['zh-CN'] || '',
+          TransKey: item['TransKey'] || ''
+        }))
+        .filter(item => item.Origin && item.TransKey);
+
+      if (entries.length > 0) {
+        return { entries, sourceFile: filePath };
+      }
+    }
+  }
+
+  throw new Error(`未找到可用翻译表。已检查: ${Array.from(new Set(searchedFiles)).join(' , ')}`);
+}
+
 const s2hkConverter = (() => {
   try {
     return openCC.Converter({ from: 'cn', to: 'hk' }) as (input: string) => string;
@@ -81,30 +174,20 @@ export function activate(context: vscode.ExtensionContext) {
     // 改进：使用更严格的匹配，确保匹配的是完整的字符串字面量
     const chinesePattern = /(['"])((?:(?!\1)[^\\\r\n]|\\.)*?)\1/g;
 
-    const sharkFile = path.join(vscode.workspace.rootPath || '', 'shark.xlsx'); // 项目中shark的配置文件
-    let keys: string[] = [];
-    const result: Record<string, string>[] = [];
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(sharkFile);
-    const worksheet = workbook.getWorksheet(1);
-
-    (worksheet || []).eachRow((row, rowNumber) => {
-      let obj: Record<string, string> = {};
-      row.eachCell((cell, colNumber) => {
-        const value = `${cell.value}`;
-        if (rowNumber === 1) {
-          keys.push(value);
-        } else {
-          obj[keys[colNumber - 1]] = value;
-        }
-      });
-      if (rowNumber > 1) {
-        result.push(obj);
-      }
-    });
+    let result: TranslationEntry[] = [];
+    try {
+      ({ entries: result } = await loadTranslationEntriesFromExcel());
+    } catch (error) {
+      vscode.window.showErrorMessage(`读取翻译表失败：${error instanceof Error ? error.message : String(error)}`);
+      return;
+    }
 
     if (editor && result.length) {
+      const transKeyMap = new Map<string, string>();
+      result.forEach(item => {
+        transKeyMap.set(item.Origin, item.TransKey);
+      });
+
       // 替换非注释部分的中文字符
       // 使用更安全的方式：先找到所有匹配，然后逐个处理
       const matches: Array<{ match: string, quote: string, content: string, start: number, end: number }> = [];
@@ -141,18 +224,16 @@ export function activate(context: vscode.ExtensionContext) {
           // 再次验证：确保匹配的内容确实是引号内的内容
           const actualContent = text.substring(start + 1, end - 1);
           if (actualContent === content) {
-            for (const { Origin, TransKey } of result) {
-              if (Origin === content) {
-                const hasPrefix = sharkPrefix.find(item => TransKey.startsWith(item));
-                let replacement;
-                if (hasPrefix) {
-                  replacement = `${sharkStoreVar}['${removeText(TransKey, hasPrefix)}']`;
-                } else {
-                  replacement = `${sharkStoreVar}['${TransKey}']`;
-                }
-                newText = newText.substring(0, start) + replacement + newText.substring(end);
-                break;
+            const matchedTransKey = transKeyMap.get(content);
+            if (matchedTransKey) {
+              const hasPrefix = sharkPrefix.find(item => matchedTransKey.startsWith(item));
+              let replacement;
+              if (hasPrefix) {
+                replacement = `${sharkStoreVar}['${removeText(matchedTransKey, hasPrefix)}']`;
+              } else {
+                replacement = `${sharkStoreVar}['${matchedTransKey}']`;
               }
+              newText = newText.substring(0, start) + replacement + newText.substring(end);
             }
           }
         }
@@ -199,30 +280,14 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 async function replaceConfigValue() {
-  const sharkFile = path.join(vscode.workspace.rootPath || '', 'shark.xlsx'); // 项目中shark的配置文件
   const editor = vscode.window.activeTextEditor;
-
-  let keys: string[] = [];
-  const result: Record<string, string>[] = [];
-
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.readFile(sharkFile);
-  const worksheet = workbook.getWorksheet(1);
-
-  (worksheet || []).eachRow((row, rowNumber) => {
-    let obj: Record<string, string> = {};
-    row.eachCell((cell, colNumber) => {
-      const value = `${cell.value}`;
-      if (rowNumber === 1) {
-        keys.push(value);
-      } else {
-        obj[keys[colNumber - 1]] = value;
-      }
-    });
-    if (rowNumber > 1) {
-      result.push(obj);
-    }
-  });
+  let result: TranslationEntry[] = [];
+  try {
+    ({ entries: result } = await loadTranslationEntriesFromExcel());
+  } catch (error) {
+    vscode.window.showErrorMessage(`读取翻译表失败：${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
 
   // 获取用户配置的shark前缀
   const sharkPrefix = vscode.workspace.getConfiguration().get('sharkTranslate.sharkPrefix') as Array<string>;
@@ -232,17 +297,16 @@ async function replaceConfigValue() {
 
     const currentCursorPosition = editor.selection.active;
     const selectedText = editor.document.getText(editor.selection) || '';
+    const sharkObj = result.find(item => item.Origin === selectedText);
 
-    const sharkObj = result.find(item => item['Origin'] === selectedText) || {};
-
-    if (sharkObj['Origin'] && sharkObj['TransKey']) {
+    if (sharkObj && sharkObj.Origin && sharkObj.TransKey) {
 
       let transKey = '';
-      const hasPrefix = sharkPrefix.find(item => sharkObj['TransKey'].startsWith(item))
+      const hasPrefix = sharkPrefix.find(item => sharkObj.TransKey.startsWith(item))
       if (hasPrefix) {
-        transKey = `${sharkStoreVar}['${removeText(sharkObj['TransKey'], hasPrefix)}']`;
+        transKey = `${sharkStoreVar}['${removeText(sharkObj.TransKey, hasPrefix)}']`;
       } else {
-        transKey = `${sharkStoreVar}['${sharkObj['TransKey']}']`;
+        transKey = `${sharkStoreVar}['${sharkObj.TransKey}']`;
       }
 
       const replaceOption = {
@@ -436,12 +500,6 @@ async function appendRealtimeTranslationToExcel(chinese: string, translated: Rea
       { header: 'th-TH', key: 'th-TH', width: 40 },
       { header: 'TransKey', key: 'TransKey', width: 50 }
     ];
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' }
-    };
   }
 
   if (worksheet.getCell('F1').value !== 'TransKey') {
@@ -643,12 +701,6 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       { header: 'th-TH', key: 'th-TH', width: 50 },
       { header: 'TransKey', key: 'TransKey', width: 50 }
     ];
-    worksheet.getRow(1).font = { bold: true };
-    worksheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE0E0E0' }
-    };
     excelRows.forEach(row => {
       worksheet.addRow(row);
     });
