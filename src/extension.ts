@@ -475,71 +475,7 @@ function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationR
 }
 
 /** 闪译 Excel 表头：zh-HK 由 opencc-js（简体→香港繁体）本地生成，不调用大模型 */
-const REALTIME_SHEET_HEADERS = ['zh-CN', 'zh-HK', 'en-US', 'ja-JP', 'ko-KR', 'th-TH', 'TransKey'] as const;
-
-function getFirstRowHeaderValues(worksheet: ExcelJS.Worksheet): string[] {
-  const row = worksheet.getRow(1);
-  const lastCol = row.cellCount;
-  const headers: string[] = [];
-  for (let c = 1; c <= lastCol; c++) {
-    headers.push(String(row.getCell(c).value ?? '').trim());
-  }
-  while (headers.length > 0 && headers[headers.length - 1] === '') {
-    headers.pop();
-  }
-  return headers;
-}
-
-/** 将 6 列（无 zh-HK）工作表升级为 7 列，zh-HK 由 OpenCC 根据 zh-CN 补全 */
-function migrateLegacyRealtimeSheetIfNeeded(worksheet: ExcelJS.Worksheet): void {
-  const headers = getFirstRowHeaderValues(worksheet);
-  if (headers.includes('zh-HK')) {
-    return;
-  }
-  const legacy = ['zh-CN', 'en-US', 'ja-JP', 'ko-KR', 'th-TH', 'TransKey'];
-  if (headers.length !== legacy.length || !legacy.every((h, i) => headers[i] === h)) {
-    return;
-  }
-
-  const dataRows: (string | number | boolean)[][] = [];
-  worksheet.eachRow((row, rowNumber) => {
-    if (rowNumber === 1) {
-      return;
-    }
-    const zhCN = String(row.getCell(1).value ?? '');
-    const en = String(row.getCell(2).value ?? '');
-    const ja = String(row.getCell(3).value ?? '');
-    const ko = String(row.getCell(4).value ?? '');
-    const th = String(row.getCell(5).value ?? '');
-    const tk = String(row.getCell(6).value ?? '');
-    dataRows.push([zhCN, toZhHk(zhCN), en, ja, ko, th, tk]);
-  });
-
-  const totalRows = worksheet.rowCount;
-  if (totalRows > 0) {
-    worksheet.spliceRows(1, totalRows);
-  }
-  worksheet.addRow([...REALTIME_SHEET_HEADERS]);
-  dataRows.forEach(r => worksheet.addRow(r));
-
-  const widths = [40, 40, 40, 40, 40, 40, 50];
-  widths.forEach((w, i) => {
-    worksheet.getColumn(i + 1).width = w;
-  });
-}
-
-/** 空表时补表头（例如工作簿里新建了空「实时翻译」表） */
-function ensureRealtimeSheetHeaderRow(worksheet: ExcelJS.Worksheet): void {
-  const headers = getFirstRowHeaderValues(worksheet);
-  if (headers.length > 0) {
-    return;
-  }
-  worksheet.addRow([...REALTIME_SHEET_HEADERS]);
-  const widths = [40, 40, 40, 40, 40, 40, 50];
-  widths.forEach((w, i) => {
-    worksheet.getColumn(i + 1).width = w;
-  });
-}
+const REALTIME_SHEET_HEADERS = ['Origin', 'zh-CN', 'zh-HK', 'en-US', 'ja-JP', 'ko-KR', 'th-TH', 'TransKey'] as const;
 
 async function appendRealtimeTranslationToExcel(chinese: string, translated: RealtimeTranslationResult, transKey: string) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
@@ -557,11 +493,13 @@ async function appendRealtimeTranslationToExcel(chinese: string, translated: Rea
   if (fs.existsSync(outputPath)) {
     await workbook.xlsx.readFile(outputPath);
     worksheet = workbook.getWorksheet('实时翻译') || workbook.getWorksheet(1) || workbook.addWorksheet('实时翻译');
-    migrateLegacyRealtimeSheetIfNeeded(worksheet);
-    ensureRealtimeSheetHeaderRow(worksheet);
+    if (worksheet.rowCount === 0) {
+      worksheet.addRow([...REALTIME_SHEET_HEADERS]);
+    }
   } else {
     worksheet = workbook.addWorksheet('实时翻译');
     worksheet.columns = [
+      { header: 'Origin', key: 'Origin', width: 40 },
       { header: 'zh-CN', key: 'zh-CN', width: 40 },
       { header: 'zh-HK', key: 'zh-HK', width: 40 },
       { header: 'en-US', key: 'en-US', width: 40 },
@@ -573,7 +511,7 @@ async function appendRealtimeTranslationToExcel(chinese: string, translated: Rea
   }
 
   const zhHk = toZhHk(chinese);
-  worksheet.addRow([chinese, zhHk, translated.en, translated.ja, translated.ko, translated.th, transKey]);
+  worksheet.addRow([chinese, chinese, zhHk, translated.en, translated.ja, translated.ko, translated.th, transKey]);
 
   await workbook.xlsx.writeFile(outputPath);
   return outputPath;
