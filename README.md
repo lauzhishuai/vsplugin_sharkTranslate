@@ -1,162 +1,174 @@
 # SharkTranslate
 
-一个强大的 VSCode 扩展，帮助开发者快速将项目中的中文替换为 Shark 国际化配置，并支持批量导出中文内容到 Excel。
+SharkTranslate 是一个 VS Code 国际化辅助插件，覆盖三条主链路：
 
-## ✨ Features
+1. 扫描中文并导出结构化 Excel  
+2. AI 翻译（单条 / 批量）并落表  
+3. 将代码中的中文替换为 `TransKey`
 
-- **选中内容替换**：编辑器中可以选择需要翻译的中文右键 `oneSharkReplace` 将所选内容快捷翻译成所配置的shark
-- **全文替换**：编辑器中可以选择需要翻译的中文右键 `allSharkReplace` 将当前文件中文快捷翻译成所配置的shark
-- **导出项目中文（按 pageId 分组）**：扫描整个项目，自动查找 Controller 文件中的 pageId 和 pageName，按页面分组导出所有中文到 Excel
-- **导出文件/文件夹中文**：支持右键选择文件或文件夹，导出其中的中文内容到 Excel
-- **智能路径过滤**：支持配置扫描排除模式，灵活控制需要扫描的文件和目录
+---
 
-## 📋 Requirements
+## 配置项
 
-### 配置说明
-
-在 VSCode `settings.json` 中配置以下选项：
+在 VS Code 设置中（或 `settings.json`）可配置：
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `sharkTranslate.sharkStoreVar` | string | `"language"` | shark存储变量名 |
-| `sharkTranslate.sharkPrefix` | array | `[]` | shark替换时需要删除的前缀（数组类型） |
-| `sharkTranslate.scanSrcPath` | string | `"src"` | 扫描中文的源目录路径，相对于项目根目录 |
-| `sharkTranslate.scanExcludePatterns` | array | `[]` | 扫描时排除的文件或文件夹（glob 模式），仅对 `exportChineseByPageId` 命令生效 |
+| `sharkTranslate.sharkStoreVar` | string | `language` | 替换后国际化变量名 |
+| `sharkTranslate.sharkPrefix` | string[] | `[]` | 替换时可自动移除的 key 前缀 |
+| `sharkTranslate.scanSrcPath` | string | `src` | `exportChineseByPageId` 默认扫描目录 |
+| `sharkTranslate.scanExcludePatterns` | string[] | `[]` | `exportChineseByPageId` 排除规则（glob） |
+| `sharkTranslate.realtimeTranslateApiUrl` | string | 见插件默认值 | AI 翻译网关地址（当前按 HTTP 调用） |
+| `sharkTranslate.realtimeTranslateApiKey` | string | `""` | AI 翻译鉴权 token |
+| `sharkTranslate.realtimeTranslateModel` | string | 见插件默认值 | AI 翻译模型名 |
+| `sharkTranslate.realtimeTranslateExcelFile` | string | `realtime_translate.xlsx` | 单条 AI 翻译输出文件名 |
 
-**配置示例：**
-```json
-{
- "sharkTranslate.sharkPrefix": [
-      "key.adresource"
-    ],
-  "sharkTranslate.sharkStoreVar": "language",
-  "sharkTranslate.scanSrcPath": "src",
-  "sharkTranslate.scanExcludePatterns": [
-    "**/components/**",
-    "**/utils/helper.ts",
-    "**/test/**",
-    "**/mock/**"
-  ]
-}
-```
+---
 
-**Glob 模式说明：**
+## 一、扫描中文能力
 
-- `**/components/**` - 排除所有 components 目录及其子目录
-- `**/utils/helper.ts` - 排除特定的文件
-- `**/*.test.ts` - 排除所有测试文件
-- `**/mock/**` - 排除 mock 目录
+本能力用于“先采集中文资产，再进入翻译或治理流程”。
 
-### 使用要求
+### 1) `exportChineseByPageId`（全域巡检）
 
-- 需要在项目根目录下新建名称为 `shark.xlsx` 文档，并导入shark平台下载的数据，供插件读取使用
-- 上传的shark数据默认为公司shark平台提供的shark模板文档格式
+- 命令：`sharkTranslate.exportChineseByPageId`
+- 用途：扫描配置目录（默认 `src`）并按 `pageId` 分组导出中文
+- 输出文件：`chinese_by_pageId.xlsx`
 
-## 🚀 功能说明
+**步骤**
+1. 在资源管理器任意位置右键  
+2. 执行“Trip中文全域巡检(默认扫描src目录)”  
+3. 等待扫描完成，打开导出的 Excel
 
-### 1. 选中内容替换
+**输出列**
+- `pageId`
+- `pageName`
+- `Origin`
+- `zh-CN`
+- `zh-HK`
+- `TransKey`
 
-在编辑器中选中中文文本，右键选择 `oneSharkReplace`，插件会查找对应的 shark 配置并替换。
+### 2) `exportChineseByPage`（定域巡检）
 
-**使用场景：** 快速替换单个中文文本为对应的 shark 配置。
+- 命令：`sharkTranslate.exportChineseByPage`
+- 用途：扫描当前文件或文件夹并导出中文
+- 输出文件：`chinese_by_current_file.xlsx`
 
-### 2. 全文替换
+**步骤**
+1. 在目标文件或文件夹上右键  
+2. 执行“Trip中文定域巡检”  
+3. 等待扫描完成，打开导出的 Excel
 
-在编辑器中右键选择 `allSharkReplace`，插件会扫描当前文件中的所有中文（自动排除注释），并替换为对应的 shark 配置。
+**输出列**
+- `pageId`
+- `pageName`
+- `Origin`
+- `zh-CN`
+- `zh-HK`
+- `TransKey`
 
-**使用场景：** 批量替换整个文件中的中文内容。
+---
 
-**智能特性：**
+## 二、AI 翻译能力
 
-- ✅ 自动排除单行注释（`//`）和多行注释（`/* */`）
-- ✅ 只匹配引号中包含中文的字符串
-- ✅ 支持单引号和双引号
+本能力用于“将中文直接翻译为多语言并写入标准翻译表”。
 
-### 3. 导出项目中文（按 pageId 分组）
+### 1) `translateSelectionToExcel`（单条闪译）
 
-**功能特点：**
+- 命令：`sharkTranslate.translateSelectionToExcel`
+- 用途：选中一段中文后实时翻译并落 Excel
+- 输出文件：`realtime_translate.xlsx`（或配置项指定文件名）
 
-- 📁 扫描整个项目，自动查找所有文件中的中文
-- 🔍 智能识别 Controller 文件中的 `pageId` 和 `pageName`
-- 📊 按 pageId 分组，生成结构化的 Excel 文件
-- ⚙️ 支持配置扫描路径和排除模式
+**步骤**
+1. 在编辑器中选中中文  
+2. 右键执行“Trip AI闪译(单条)”  
+3. 确认翻译结果后写入 Excel
 
-**使用步骤：**
+**输出列**
+- `Origin`
+- `zh-CN`
+- `zh-HK`
+- `en-US`
+- `ja-JP`
+- `ko-KR`
+- `th-TH`
+- `TransKey`
 
-1. 在文件资源管理器中右键选择任意位置
-2. 选择 `导出项目中的中文到Excel(默认扫描src目录)`
-3. 插件会扫描配置的源目录（默认 `src`），查找所有文件中的中文
-4. 通过查找 Controller 文件中的 `pageId` 和 `pageName` 进行分组
-5. 生成 Excel 文件：`chinese_by_pageId.xlsx`
+### 2) `batchTranslateChineseToExcel`（批量翻译）
 
-**Excel 文件格式：**
+- 命令：`sharkTranslate.batchTranslateChineseToExcel`
+- 用途：扫描文件/文件夹中的中文并批量翻译后导出
+- 输出文件：`batch_translate_by_page.xlsx`
 
-| pageId | pageName | 中文 |
-| --- | --- | --- |
-| 1001 | 首页, 主页 | 欢迎使用 |
-| 1001 | 首页, 主页 | 点击登录 |
-| 1002 | 商品列表 | 商品名称 |
+**步骤**
+1. 在目标文件或文件夹上右键  
+2. 执行“Trip AI批译(批量)”  
+3. 等待批量翻译完成并打开导出文件
 
-**Controller 文件识别规则：**
+**输出列**
+- `pageId`
+- `Origin`
+- `zh-CN`
+- `zh-HK`
+- `en-US`
+- `ja-JP`
+- `ko-KR`
+- `th-TH`
+- `TransKey`
 
-- 支持文件名：`Controller.ts`、`controller.ts`、`LocalController.ts`、`localController.ts` 等
-- 自动向上查找：从当前文件所在目录向上查找，直到找到包含 `pageId` 的 Controller 文件
-- pageId 格式：`pageId = 数字` 或 `pageId: 数字`
-- pageName 格式：`pageName = ['xxx', 'yyy']` 或 `pageName: ['xxx', 'yyy']`
+---
 
-### 4. 导出文件/文件夹中文
+## 三、Shark 替换能力
 
-**使用步骤：**
+本能力用于“将代码中的中文替换为国际化 key 引用”。
 
-1. 在文件资源管理器中右键选择文件或文件夹
-2. 选择 `导出当前文件/文件夹中的中文到Excel`
-3. 插件会扫描选中的文件或文件夹中的所有中文
-4. 生成 Excel 文件：`chinese_by_current_file.xlsx`
+### 1) `oneSharkReplace`（点替）
 
-**Excel 文件格式：**
+- 命令：`sharkTranslate.oneSharkReplace`
+- 用途：替换当前选中的单条中文
 
-| filePath | 中文 |
-| --- | --- |
-| src/pages/home/index.tsx | 欢迎使用 |
-| src/pages/home/index.tsx | 点击登录 |
-| src/components/Button.tsx | 确定 |
+**步骤**
+1. 在代码中选中中文  
+2. 右键执行“Trip Shark点替”  
+3. 选择确认后完成替换
 
-## ⚙️ 高级配置
+### 2) `allSharkReplace`（全替）
 
-### 扫描路径过滤
+- 命令：`sharkTranslate.allSharkReplace`
+- 用途：批量替换当前文件中可匹配的中文（自动排除注释）
 
-通过配置 `sharkTranslate.scanExcludePatterns`，可以灵活控制扫描范围，排除不需要扫描的文件和目录。
+**步骤**
+1. 打开目标文件  
+2. 右键执行“Trip Shark全替”  
+3. 插件按翻译表映射批量替换
 
-**示例配置：**
-```json
-{
-  "sharkTranslate.scanExcludePatterns": [
-    "**/components/**",      // 排除所有 components 目录
-    "**/utils/**",           // 排除所有 utils 目录
-    "**/*.test.ts",          // 排除所有测试文件
-    "**/mock/**",            // 排除 mock 目录
-    "**/node_modules/**"     // 排除 node_modules（默认已排除）
-  ]
-}
-```
+### 替换读取的翻译表优先级
 
-**默认排除项（无需配置）：**
+插件会在项目根目录按顺序尝试读取：
 
-- `node_modules`
-- `dist`、`build`、`out`
-- `.git`
-- `*.d.ts`
-- `*.test.ts`、`*.test.tsx`
-- `*.spec.ts`、`*.spec.tsx`
+1. `shark.xlsx`
+2. `batch_translate_by_page.xlsx`
+3. `realtimeTranslateExcelFile`（配置项对应文件名）
+4. `realtime_translate.xlsx`
 
-## 📝 注意事项
+要求至少包含：
+- `TransKey`
+- `Origin`（或 `zh-CN` 作为兼容来源）
 
-1. **shark.xlsx 文件格式：** 必须包含 `Origin` 和 `TransKey` 两列
-2. **中文匹配规则：** 只匹配引号中包含中文字符的字符串，自动排除注释
-3. **pageId 查找：** 如果找不到对应的 Controller 文件，会使用文件相对路径作为标识
-4. **文件类型支持：** `.ts`、`.tsx`、`.js`、`.jsx`、`.vue`
+---
 
-## 🔗 相关链接
+## 识别与匹配规则
 
-- [Visual Studio Marketplace](https://marketplace.visualstudio.com/)
-- [Open VSX Registry](https://open-vsx.org/)
+- 仅识别引号中的文本（单引号 / 双引号）
+- 自动排除注释内容（`//`、`/* ... */`）
+- 文件类型支持：`.ts`、`.tsx`、`.js`、`.jsx`、`.vue`
+- `pageId` 通过向上查找 Controller 文件推断
+
+---
+
+## 建议使用流程
+
+1. 先执行中文巡检（全域或定域）确认文案分布  
+2. 用 AI 单条或批量翻译生成标准翻译表  
+3. 在代码中执行点替 / 全替完成 key 化  
+4. 需要时复用翻译表做增量维护
