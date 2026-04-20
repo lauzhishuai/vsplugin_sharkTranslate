@@ -2,7 +2,7 @@
   "name": "shark-translate",
   "displayName": "SharkTranslate",
   "description": "中文转shark",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "publisher": "zs-liu",
   "engines": {
     "vscode": "^1.78.0"
@@ -129,6 +129,24 @@
           "type": "string",
           "default": "gpt-4o-mini",
           "description": "实时翻译模型名称"
+        },
+        "sharkTranslate.translateTargetLanguages": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "zh-HK",
+              "en-US",
+              "ja-JP",
+              "ko-KR",
+              "th-TH"
+            ]
+          },
+          "default": [
+            "zh-HK",
+            "en-US"
+          ],
+          "description": "AI 翻译目标语种（可多选）。默认：繁体中文(zh-HK)、英文(en-US)"
         },
         "sharkTranslate.realtimeTranslateExcelFile": {
           "type": "string",

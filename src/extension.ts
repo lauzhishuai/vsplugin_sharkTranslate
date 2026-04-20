@@ -337,10 +337,44 @@ function removeText(originalText: string, textToRemove: string) {
 }
 
 interface RealtimeTranslationResult {
-  en: string;
-  ja: string;
-  ko: string;
-  th: string;
+  [languageCode: string]: string;
+}
+
+interface TranslateLanguageConfig {
+  code: string;
+  label: string;
+  aiKey?: string;
+}
+
+const SUPPORTED_TRANSLATE_LANGUAGES: TranslateLanguageConfig[] = [
+  { code: 'zh-HK', label: '繁体中文(香港)' },
+  { code: 'en-US', label: '英文', aiKey: 'en' },
+  { code: 'ja-JP', label: '日语', aiKey: 'ja' },
+  { code: 'ko-KR', label: '韩语', aiKey: 'ko' },
+  { code: 'th-TH', label: '泰语', aiKey: 'th' }
+];
+
+function getConfiguredTranslateLanguages(): string[] {
+  const config = vscode.workspace.getConfiguration();
+  const configured = config.get('sharkTranslate.translateTargetLanguages') as string[] | undefined;
+  const defaultLanguages = ['zh-HK', 'en-US'];
+  const source = configured && configured.length > 0 ? configured : defaultLanguages;
+  const supportedCodes = new Set(SUPPORTED_TRANSLATE_LANGUAGES.map(item => item.code));
+  const filtered = source.filter(code => supportedCodes.has(code));
+  if (filtered.length === 0) {
+    return defaultLanguages;
+  }
+  return Array.from(new Set(filtered));
+}
+
+function getAiLanguageConfigs(targetLanguages: string[]): TranslateLanguageConfig[] {
+  return SUPPORTED_TRANSLATE_LANGUAGES
+    .filter(item => targetLanguages.includes(item.code) && !!item.aiKey);
+}
+
+function getLanguageLabel(languageCode: string): string {
+  const found = SUPPORTED_TRANSLATE_LANGUAGES.find(item => item.code === languageCode);
+  return found ? found.label : languageCode;
 }
 
 function formatEnglishForTransKey(englishText: string): string {
@@ -380,7 +414,12 @@ function buildTransKeyForDocument(documentPath: string, englishText: string): st
   return `key.${pageId}.${formatEnglishForTransKey(englishText)}`;
 }
 
-function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationResult> {
+function requestRealtimeTranslations(text: string, targetLanguages: string[]): Promise<RealtimeTranslationResult> {
+  const aiLanguageConfigs = getAiLanguageConfigs(targetLanguages);
+  if (aiLanguageConfigs.length === 0) {
+    return Promise.resolve({});
+  }
+
   const config = vscode.workspace.getConfiguration();
   const apiKey = config.get('sharkTranslate.realtimeTranslateApiKey') as string || '';
   const apiUrl = config.get('sharkTranslate.realtimeTranslateApiUrl') as string || '';
@@ -393,13 +432,21 @@ function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationR
     throw new Error('未配置 sharkTranslate.realtimeTranslateApiUrl，请先在插件设置中配置。');
   }
 
+  const targetPrompt = aiLanguageConfigs
+    .map(item => `${item.label}(${item.aiKey})`)
+    .join('、');
+  const targetKeys = aiLanguageConfigs
+    .map(item => item.aiKey)
+    .filter((item): item is string => !!item)
+    .join('、');
+
   const payload = JSON.stringify({
     model,
     temperature: 0.2,
     messages: [
       {
         role: 'system',
-        content: '你是翻译助手。请把用户提供的中文翻译成英文、日语、韩语、泰语，并只返回 JSON，键名固定为 en、ja、ko、th。'
+        content: `你是翻译助手。请把用户提供的中文翻译成：${targetPrompt}。只返回 JSON，不要额外解释。JSON 键名固定为：${targetKeys}。`
       },
       {
         role: 'user',
@@ -415,13 +462,16 @@ function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationR
       throw new Error('模型返回内容为空');
     }
     const normalizedContent = content.replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-    const parsed = JSON.parse(normalizedContent) as Partial<RealtimeTranslationResult>;
-    return {
-      en: parsed.en || '',
-      ja: parsed.ja || '',
-      ko: parsed.ko || '',
-      th: parsed.th || ''
-    };
+    const parsed = JSON.parse(normalizedContent) as Record<string, string>;
+    const result: RealtimeTranslationResult = {};
+    aiLanguageConfigs.forEach(item => {
+      if (!item.aiKey) {
+        return;
+      }
+      const value = parsed[item.aiKey];
+      result[item.code] = typeof value === 'string' ? value : '';
+    });
+    return result;
   };
 
   const requestOnce = (targetUrl: string): Promise<RealtimeTranslationResult> => {
@@ -474,10 +524,24 @@ function requestRealtimeTranslations(text: string): Promise<RealtimeTranslationR
   return requestOnce(apiUrl);
 }
 
-/** 闪译 Excel 表头：zh-HK 由 opencc-js（简体→香港繁体）本地生成，不调用大模型 */
-const REALTIME_SHEET_HEADERS = ['Origin', 'zh-CN', 'zh-HK', 'en-US', 'ja-JP', 'ko-KR', 'th-TH', 'TransKey'] as const;
+function buildRealtimeSheetHeaders(targetLanguages: string[]): string[] {
+  return ['Origin', 'zh-CN', ...targetLanguages, 'TransKey'];
+}
 
-async function appendRealtimeTranslationToExcel(chinese: string, translated: RealtimeTranslationResult, transKey: string) {
+function buildRealtimeSheetRow(chinese: string, translated: RealtimeTranslationResult, transKey: string, targetLanguages: string[]): string[] {
+  const row: string[] = [chinese, chinese];
+  targetLanguages.forEach(languageCode => {
+    if (languageCode === 'zh-HK') {
+      row.push(toZhHk(chinese));
+      return;
+    }
+    row.push(translated[languageCode] || '');
+  });
+  row.push(transKey);
+  return row;
+}
+
+async function appendRealtimeTranslationToExcel(chinese: string, translated: RealtimeTranslationResult, transKey: string, targetLanguages: string[]) {
   const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
   if (!workspaceFolder) {
     throw new Error('未找到工作区，请先打开一个工作区');
@@ -489,29 +553,34 @@ async function appendRealtimeTranslationToExcel(chinese: string, translated: Rea
 
   const workbook = new ExcelJS.Workbook();
   let worksheet: ExcelJS.Worksheet;
+  const headers = buildRealtimeSheetHeaders(targetLanguages);
 
   if (fs.existsSync(outputPath)) {
     await workbook.xlsx.readFile(outputPath);
     worksheet = workbook.getWorksheet('实时翻译') || workbook.getWorksheet(1) || workbook.addWorksheet('实时翻译');
     if (worksheet.rowCount === 0) {
-      worksheet.addRow([...REALTIME_SHEET_HEADERS]);
+      worksheet.addRow([...headers]);
     }
   } else {
     worksheet = workbook.addWorksheet('实时翻译');
-    worksheet.columns = [
-      { header: 'Origin', key: 'Origin', width: 40 },
-      { header: 'zh-CN', key: 'zh-CN', width: 40 },
-      { header: 'zh-HK', key: 'zh-HK', width: 40 },
-      { header: 'en-US', key: 'en-US', width: 40 },
-      { header: 'ja-JP', key: 'ja-JP', width: 40 },
-      { header: 'ko-KR', key: 'ko-KR', width: 40 },
-      { header: 'th-TH', key: 'th-TH', width: 40 },
-      { header: 'TransKey', key: 'TransKey', width: 50 }
-    ];
+    worksheet.columns = headers.map(header => ({
+      header,
+      key: header,
+      width: header === 'TransKey' ? 50 : 40
+    }));
   }
 
-  const zhHk = toZhHk(chinese);
-  worksheet.addRow([chinese, chinese, zhHk, translated.en, translated.ja, translated.ko, translated.th, transKey]);
+  if (worksheet.rowCount > 0) {
+    const headerRow = worksheet.getRow(1);
+    const currentHeaders = headers
+      .map((_, idx) => String(headerRow.getCell(idx + 1).value ?? '').trim())
+      .filter(item => item);
+    if (currentHeaders.join('|') !== headers.join('|')) {
+      throw new Error(`翻译表表头与当前语种配置不一致。当前表头: ${currentHeaders.join(', ')}；期望表头: ${headers.join(', ')}`);
+    }
+  }
+
+  worksheet.addRow(buildRealtimeSheetRow(chinese, translated, transKey, targetLanguages));
 
   await workbook.xlsx.writeFile(outputPath);
   return outputPath;
@@ -531,16 +600,21 @@ async function translateSelectionToExcel() {
   }
 
   try {
+    const targetLanguages = getConfiguredTranslateLanguages();
     const translated = await vscode.window.withProgress({
       location: vscode.ProgressLocation.Notification,
       title: '正在实时翻译选中文本...',
       cancellable: false
-    }, async () => requestRealtimeTranslations(selectedText));
-    const transKey = buildTransKeyForDocument(editor.document.uri.fsPath, translated.en);
+    }, async () => requestRealtimeTranslations(selectedText, targetLanguages));
+    const englishForTransKey = translated['en-US'] || '';
+    const transKey = buildTransKeyForDocument(editor.document.uri.fsPath, englishForTransKey);
 
-    const zhHkPreview = toZhHk(selectedText);
+    const previewLines = targetLanguages.map(languageCode => {
+      const value = languageCode === 'zh-HK' ? toZhHk(selectedText) : (translated[languageCode] || '');
+      return `${getLanguageLabel(languageCode)}(${languageCode}): ${value}`;
+    });
     const confirm = await vscode.window.showInformationMessage(
-      `翻译完成，是否写入 Excel？\nzh-HK(OpenCC): ${zhHkPreview}\nEN: ${translated.en}\nJA: ${translated.ja}\nKO: ${translated.ko}\nTH: ${translated.th}\nTransKey: ${transKey}`,
+      `翻译完成，是否写入 Excel？\n${previewLines.join('\n')}\nTransKey: ${transKey}`,
       { modal: true },
       '确认写入',
       '取消'
@@ -550,7 +624,7 @@ async function translateSelectionToExcel() {
       return;
     }
 
-    const outputPath = await appendRealtimeTranslationToExcel(selectedText, translated, transKey);
+    const outputPath = await appendRealtimeTranslationToExcel(selectedText, translated, transKey, targetLanguages);
     vscode.window.showInformationMessage(`已写入 ${path.basename(outputPath)}`, '打开文件').then(selection => {
       if (selection === '打开文件') {
         vscode.commands.executeCommand('vscode.open', vscode.Uri.file(outputPath));
@@ -591,6 +665,7 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
     title: singleFile ? '正在批量翻译当前文件中的中文...' : '正在批量翻译文件夹中的中文...',
     cancellable: false
   }, async (progress) => {
+    const targetLanguages = getConfiguredTranslateLanguages();
     progress.report({ increment: 0, message: '开始扫描文件...' });
 
     let uniqueFiles: string[] = [];
@@ -660,7 +735,7 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
     });
 
     const translationCache: Map<string, RealtimeTranslationResult> = new Map();
-    const excelRows: { pageId: string; Origin: string; 'zh-CN': string; 'zh-HK': string; 'en-US': string; 'ja-JP': string; 'ko-KR': string; 'th-TH': string; TransKey: string }[] = [];
+    const excelRows: Record<string, string>[] = [];
     let translatedCount = 0;
 
     for (const pageId of sortedPageIds) {
@@ -668,21 +743,26 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       for (const chinese of chineseSet) {
         let translated = translationCache.get(chinese);
         if (!translated) {
-          translated = await requestRealtimeTranslations(chinese);
+          translated = await requestRealtimeTranslations(chinese, targetLanguages);
           translationCache.set(chinese, translated);
         }
-        const transKey = buildTransKeyByPageId(pageId, translated.en);
-        excelRows.push({
+        const translatedResult = translated || {};
+        const englishForTransKey = translatedResult['en-US'] || '';
+        const transKey = buildTransKeyByPageId(pageId, englishForTransKey);
+        const row: Record<string, string> = {
           pageId,
           Origin: chinese,
-          'zh-CN': chinese,
-          'zh-HK': toZhHk(chinese),
-          'en-US': translated.en,
-          'ja-JP': translated.ja,
-          'ko-KR': translated.ko,
-          'th-TH': translated.th,
-          TransKey: transKey
+          'zh-CN': chinese
+        };
+        targetLanguages.forEach(languageCode => {
+          if (languageCode === 'zh-HK') {
+            row['zh-HK'] = toZhHk(chinese);
+            return;
+          }
+          row[languageCode] = translatedResult[languageCode] || '';
         });
+        row.TransKey = transKey;
+        excelRows.push(row);
 
         translatedCount += 1;
         progress.report({
@@ -695,17 +775,12 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
     progress.report({ increment: 10, message: '正在生成 Excel 文件...' });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('批量翻译');
-    worksheet.columns = [
-      { header: 'pageId', key: 'pageId', width: 20 },
-      { header: 'Origin', key: 'Origin', width: 50 },
-      { header: 'zh-CN', key: 'zh-CN', width: 50 },
-      { header: 'zh-HK', key: 'zh-HK', width: 50 },
-      { header: 'en-US', key: 'en-US', width: 50 },
-      { header: 'ja-JP', key: 'ja-JP', width: 50 },
-      { header: 'ko-KR', key: 'ko-KR', width: 50 },
-      { header: 'th-TH', key: 'th-TH', width: 50 },
-      { header: 'TransKey', key: 'TransKey', width: 50 }
-    ];
+    const dynamicHeaders = ['pageId', 'Origin', 'zh-CN', ...targetLanguages, 'TransKey'];
+    worksheet.columns = dynamicHeaders.map(header => ({
+      header,
+      key: header,
+      width: header === 'pageId' ? 20 : 50
+    }));
     excelRows.forEach(row => {
       worksheet.addRow(row);
     });
