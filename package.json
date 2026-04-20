@@ -31,26 +31,26 @@
       },
       {
         "command": "sharkTranslate.exportChineseByPageId",
-        "title": "Trip Shark中文全域巡检(默认扫描src目录)"
+        "title": "Trip中文全域巡检(默认扫描src目录)"
       },
       {
         "command": "sharkTranslate.exportChineseByPage",
-        "title": "Trip Shark中文定域巡检"
+        "title": "Trip中文定域巡检"
       },
       {
         "command": "sharkTranslate.translateSelectionToExcel",
-        "title": "Trip Shark闪译(单条)"
+        "title": "Trip AI闪译(单条)"
       },
       {
         "command": "sharkTranslate.batchTranslateChineseToExcel",
-        "title": "Trip Shark批译(批量)"
+        "title": "Trip AI批译(批量)"
       }
     ],
     "menus": {
       "editor/context": [
         {
           "command": "sharkTranslate.translateSelectionToExcel",
-          "title": "Trip Shark闪译(单条)",
+          "title": "Trip AI闪译(单条)",
           "group": "navigation",
           "when": "editorTextFocus && editorHasSelection && !editorReadonly"
         },
@@ -70,17 +70,17 @@
       "explorer/context": [
         {
           "command": "sharkTranslate.batchTranslateChineseToExcel",
-          "title": "Trip Shark批译(批量)",
+          "title": "Trip AI批译(批量)",
           "group": "navigation@1"
         },
         {
           "command": "sharkTranslate.exportChineseByPageId",
-          "title": "Trip Shrak中文全域巡检(默认扫描src目录)",
+          "title": "Trip 中文全域巡检(默认扫描src目录)",
           "group": "navigation@2"
         },
         {
           "command": "sharkTranslate.exportChineseByPage",
-          "title": "Trip Shark中文定域巡检",
+          "title": "Trip 中文定域巡检",
           "group": "navigation@3"
         }
       ]
@@ -96,8 +96,11 @@
         },
         "sharkTranslate.sharkPrefix": {
           "type": "array",
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "description": "配置页面shark前缀，用于替换时快捷去除通用前缀"
+          "description": "配置页面 shark 前缀，用于替换时快捷去除通用前缀（字符串数组）"
         },
         "sharkTranslate.scanSrcPath": {
           "type": "string",
@@ -106,8 +109,11 @@
         },
         "sharkTranslate.scanExcludePatterns": {
           "type": "array",
+          "items": {
+            "type": "string"
+          },
           "default": [],
-          "description": "扫描时排除的文件或文件夹（glob 模式），例如: [\"**/components/**\", \"**/utils/helper.ts\"]（仅对 exportChineseByPageId 命令生效）"
+          "description": "扫描时排除的文件或文件夹（glob 模式，字符串数组），例如: [\"**/components/**\", \"**/utils/helper.ts\"]（仅对 exportChineseByPageId 命令生效）"
         },
         "sharkTranslate.realtimeTranslateApiUrl": {
           "type": "string",
