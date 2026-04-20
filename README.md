@@ -21,7 +21,15 @@ SharkTranslate 是一个 VS Code 国际化辅助插件，覆盖三条主链路�
 | `sharkTranslate.realtimeTranslateApiUrl` | string | 见插件默认值 | AI 翻译网关地址（当前按 HTTP 调用） |
 | `sharkTranslate.realtimeTranslateApiKey` | string | `""` | AI 翻译鉴权 token |
 | `sharkTranslate.realtimeTranslateModel` | string | 见插件默认值 | AI 翻译模型名 |
+| `sharkTranslate.translateTargetLanguages` | string[] | `["zh-HK","en-US"]` | AI 翻译目标语种（可多选） |
 | `sharkTranslate.realtimeTranslateExcelFile` | string | `realtime_translate.xlsx` | 单条 AI 翻译输出文件名 |
+
+`translateTargetLanguages` 支持值：
+- `zh-HK`（繁体中文，使用 OpenCC 本地生成）
+- `en-US`
+- `ja-JP`
+- `ko-KR`
+- `th-TH`
 
 ---
 
@@ -84,14 +92,15 @@ SharkTranslate 是一个 VS Code 国际化辅助插件，覆盖三条主链路�
 2. 右键执行“Trip AI闪译(单条)”  
 3. 确认翻译结果后写入 Excel
 
-**输出列**
+**输出列（动态）**
+- 固定列：`Origin`、`zh-CN`、`TransKey`
+- 动态列：按 `translateTargetLanguages` 追加（例如默认 `zh-HK`、`en-US`）
+
+默认情况下，单条翻译的列为：
 - `Origin`
 - `zh-CN`
 - `zh-HK`
 - `en-US`
-- `ja-JP`
-- `ko-KR`
-- `th-TH`
 - `TransKey`
 
 ### 2) `batchTranslateChineseToExcel`（批量翻译）
@@ -105,15 +114,16 @@ SharkTranslate 是一个 VS Code 国际化辅助插件，覆盖三条主链路�
 2. 执行“Trip AI批译(批量)”  
 3. 等待批量翻译完成并打开导出文件
 
-**输出列**
+**输出列（动态）**
+- 固定列：`pageId`、`Origin`、`zh-CN`、`TransKey`
+- 动态列：按 `translateTargetLanguages` 追加（例如默认 `zh-HK`、`en-US`）
+
+默认情况下，批量翻译的列为：
 - `pageId`
 - `Origin`
 - `zh-CN`
 - `zh-HK`
 - `en-US`
-- `ja-JP`
-- `ko-KR`
-- `th-TH`
 - `TransKey`
 
 ---
@@ -163,6 +173,14 @@ SharkTranslate 是一个 VS Code 国际化辅助插件，覆盖三条主链路�
 - 自动排除注释内容（`//`、`/* ... */`）
 - 文件类型支持：`.ts`、`.tsx`、`.js`、`.jsx`、`.vue`
 - `pageId` 通过向上查找 Controller 文件推断
+
+---
+
+## 常见说明
+
+- 单条翻译使用 `realtime_translate.xlsx`（或你自定义的 `realtimeTranslateExcelFile`）
+- 批量翻译使用 `batch_translate_by_page.xlsx`
+- 若已存在单条翻译表，且你修改了 `translateTargetLanguages`，新旧表头可能不一致；建议新建一份翻译表或先备份后重建
 
 ---
 
