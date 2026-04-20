@@ -884,8 +884,8 @@ async function exportChineseByPage(uri?: vscode.Uri) {
     progress.report({ increment: 20, message: "正在生成 Excel 文件..." });
 
     // 生成 Excel 数据
-    const excelData: { pageId: string; pageName: string; Origin: string; 'zh-CN': string; 'zh-HK': string; TransKey: string }[] = [];
-    
+    const excelData: { pageId: string; pageName: string; 'zh-CN': string }[] = [];
+
     // 对 pageId 进行排序，数字类型的 pageId 放在前面
     const sortedPageIds = Array.from(pageChineseMap.keys()).sort((a, b) => {
       const aIsNumber = /^\d+$/.test(a);
@@ -900,11 +900,8 @@ async function exportChineseByPage(uri?: vscode.Uri) {
 
     sortedPageIds.forEach(pageId => {
       const { pageName, chineseSet } = pageChineseMap.get(pageId)!;
-      // 判断 pageId 是否为有效数字，如果是则生成 key，否则为空
-      const isValidPageId = /^\d+$/.test(pageId);
-      const key = isValidPageId ? `key.${pageId}.` : '';
       chineseSet.forEach(chinese => {
-        excelData.push({ pageId, pageName, Origin: chinese, 'zh-CN': chinese, 'zh-HK': toZhHk(chinese), TransKey: key });
+        excelData.push({ pageId, pageName, 'zh-CN': chinese });
       });
     });
 
@@ -921,10 +918,7 @@ async function exportChineseByPage(uri?: vscode.Uri) {
     worksheet.columns = [
       { header: 'pageId', key: 'pageId', width: 20 },
       { header: 'pageName', key: 'pageName', width: 40 },
-      { header: 'Origin', key: 'Origin', width: 50 },
-      { header: 'zh-CN', key: 'zh-CN', width: 50 },
-      { header: 'zh-HK', key: 'zh-HK', width: 50 },
-      { header: 'TransKey', key: 'TransKey', width: 30 }
+      { header: 'zh-CN', key: 'zh-CN', width: 50 }
     ];
 
     // 设置表头样式
@@ -1177,7 +1171,7 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
     progress.report({ increment: 20, message: "正在生成 Excel 文件..." });
 
     // 生成 Excel 数据
-    const excelData: { pageId: string; pageName: string; Origin: string; 'zh-CN': string; 'zh-HK': string; TransKey: string }[] = [];
+    const excelData: { pageId: string; pageName: string; 'zh-CN': string }[] = [];
 
     // 对 pageId 进行排序，数字类型的 pageId 放在前面
     const sortedPageIds = Array.from(pageChineseMap.keys()).sort((a, b) => {
@@ -1193,11 +1187,8 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
 
     sortedPageIds.forEach(pageId => {
       const { pageName, chineseSet } = pageChineseMap.get(pageId)!;
-      // 判断 pageId 是否为有效数字，如果是则生成 key，否则为空
-      const isValidPageId = /^\d+$/.test(pageId);
-      const key = isValidPageId ? `key.${pageId}.` : '';
       chineseSet.forEach(chinese => {
-        excelData.push({ pageId, pageName, Origin: chinese, 'zh-CN': chinese, 'zh-HK': toZhHk(chinese), TransKey: key });
+        excelData.push({ pageId, pageName, 'zh-CN': chinese });
       });
     });
 
@@ -1214,10 +1205,7 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
     worksheet.columns = [
       { header: 'pageId', key: 'pageId', width: 20 },
       { header: 'pageName', key: 'pageName', width: 40 },
-      { header: 'Origin', key: 'Origin', width: 50 },
-      { header: 'zh-CN', key: 'zh-CN', width: 50 },
-      { header: 'zh-HK', key: 'zh-HK', width: 50 },
-      { header: 'TransKey', key: 'TransKey', width: 30 }
+      { header: 'zh-CN', key: 'zh-CN', width: 50 }
     ];
 
     // 设置表头样式
