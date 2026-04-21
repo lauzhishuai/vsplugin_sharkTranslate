@@ -873,6 +873,7 @@ async function exportChineseByPage(uri?: vscode.Uri) {
     vscode.window.showErrorMessage('未找到工作区，请先打开一个工作区');
     return;
   }
+  const userExcludePatterns = vscode.workspace.getConfiguration().get('sharkTranslate.scanExcludePatterns') as string[] || [];
 
   // 确定扫描的根目录或单个文件
   let scanRoot = workspaceFolder.uri.fsPath;
@@ -911,8 +912,7 @@ async function exportChineseByPage(uri?: vscode.Uri) {
         '**/*.tsx',
         '**/*.js',
         '**/*.jsx',
-        '**/*.vue',
-        '**/*.jsx'
+        '**/*.vue'
       ];
 
       // 需要排除的目录
@@ -921,7 +921,13 @@ async function exportChineseByPage(uri?: vscode.Uri) {
         '**/dist/**',
         '**/build/**',
         '**/.git/**',
-        '**/out/**'
+        '**/out/**',
+        '**/*.d.ts',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/*.spec.ts',
+        '**/*.spec.tsx',
+        ...userExcludePatterns
       ];
 
       const allFiles: string[] = [];
