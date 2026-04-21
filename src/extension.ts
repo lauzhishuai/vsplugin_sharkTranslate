@@ -636,7 +636,7 @@ async function translateSelectionToExcel() {
 }
 
 function buildTransKeyByPageId(pageId: string, englishText: string): string {
-  const normalizedPageId = pageId && pageId.trim() ? pageId.trim() : 'common';
+  const normalizedPageId = pageId && /^\d+$/.test(pageId.trim()) ? pageId.trim() : 'common';
   return `key.${normalizedPageId}.${formatEnglishForTransKey(englishText)}`;
 }
 
