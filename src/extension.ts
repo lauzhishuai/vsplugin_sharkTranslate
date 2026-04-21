@@ -678,9 +678,10 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
   await vscode.window.withProgress({
     location: vscode.ProgressLocation.Notification,
     title: singleFile ? '正在批量翻译当前文件中的中文...' : '正在批量翻译文件夹中的中文...',
-    cancellable: false
-  }, async (progress) => {
+    cancellable: true
+  }, async (progress, token) => {
     const targetLanguages = getConfiguredTranslateLanguages();
+    let cancelled = false;
     progress.report({ increment: 0, message: '开始扫描文件...' });
 
     let uniqueFiles: string[] = [];
@@ -704,6 +705,10 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       ];
       const allFiles: string[] = [];
       for (const pattern of filePatterns) {
+        if (token.isCancellationRequested) {
+          cancelled = true;
+          break;
+        }
         try {
           const files = await globAsync(pattern, {
             cwd: scanRoot,
@@ -719,8 +724,17 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       progress.report({ increment: 20, message: `找到 ${uniqueFiles.length} 个文件，开始提取中文...` });
     }
 
+    if (token.isCancellationRequested) {
+      vscode.window.showWarningMessage('批量翻译已取消');
+      return;
+    }
+
     const pageChineseMap: Map<string, { pageName: string; chineseSet: Set<string> }> = new Map();
     for (let i = 0; i < uniqueFiles.length; i++) {
+      if (token.isCancellationRequested) {
+        cancelled = true;
+        break;
+      }
       const filePath = uniqueFiles[i];
       try {
         const fileContent = fs.readFileSync(filePath, 'utf-8');
@@ -765,9 +779,18 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
     const excelRows: Record<string, string>[] = [];
     let translatedCount = 0;
 
+    outerLoop:
     for (const pageId of sortedPageIds) {
+      if (token.isCancellationRequested) {
+        cancelled = true;
+        break;
+      }
       const { chineseSet } = pageChineseMap.get(pageId)!;
       for (const chinese of chineseSet) {
+        if (token.isCancellationRequested) {
+          cancelled = true;
+          break outerLoop;
+        }
         let translated = translationCache.get(chinese);
         if (!translated) {
           translated = await requestRealtimeTranslations(chinese, targetLanguages);
@@ -799,6 +822,11 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       }
     }
 
+    if (cancelled && excelRows.length === 0) {
+      vscode.window.showWarningMessage('批量翻译已取消，未生成结果文件');
+      return;
+    }
+
     progress.report({ increment: 10, message: '正在生成 Excel 文件...' });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('批量翻译');
@@ -814,10 +842,10 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
 
     const outputPath = path.join(workspaceFolder.uri.fsPath, 'batch_translate_by_page.xlsx');
     await workbook.xlsx.writeFile(outputPath);
-    vscode.window.showInformationMessage(
-      `批量翻译完成，共 ${excelRows.length} 条，已导出 ${path.basename(outputPath)}`,
-      '打开文件'
-    ).then(selection => {
+    const resultMessage = cancelled
+      ? `批量翻译已取消，已导出当前进度 ${excelRows.length} 条到 ${path.basename(outputPath)}`
+      : `批量翻译完成，共 ${excelRows.length} 条，已导出 ${path.basename(outputPath)}`;
+    vscode.window.showInformationMessage(resultMessage, '打开文件').then(selection => {
       if (selection === '打开文件') {
         vscode.commands.executeCommand('vscode.open', vscode.Uri.file(outputPath));
       }
