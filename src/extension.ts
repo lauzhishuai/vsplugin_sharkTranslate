@@ -647,7 +647,17 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
     return;
   }
 
-  // 确定扫描的根目录或单个文件
+  if (!uri || !uri.fsPath) {
+    vscode.window.showWarningMessage('请在资源管理器中右键文件或文件夹后执行批量翻译');
+    return;
+  }
+
+  // 与 exportChineseByPageId 对齐：过滤规则一致（排除目录、测试文件、自定义排除）
+  const userExcludePatterns = vscode.workspace.getConfiguration().get('sharkTranslate.scanExcludePatterns') as string[] || [];
+
+  // 确定扫描根目录或单个文件：
+  // - 右键目录：扫描该目录
+  // - 右键文件：仅扫描该文件
   let scanRoot = workspaceFolder.uri.fsPath;
   let singleFile: string | null = null;
   if (uri && uri.fsPath) {
@@ -658,6 +668,11 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       singleFile = uri.fsPath;
       scanRoot = path.dirname(uri.fsPath);
     }
+  }
+
+  if (!singleFile && !fs.existsSync(scanRoot)) {
+    vscode.window.showErrorMessage(`扫描目录不存在: ${scanRoot}`);
+    return;
   }
 
   await vscode.window.withProgress({
@@ -674,7 +689,19 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       progress.report({ increment: 20, message: `扫描文件: ${path.basename(singleFile)}` });
     } else {
       const filePatterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.vue'];
-      const excludePatterns = ['**/node_modules/**', '**/dist/**', '**/build/**', '**/.git/**', '**/out/**'];
+      const excludePatterns = [
+        '**/node_modules/**',
+        '**/dist/**',
+        '**/build/**',
+        '**/.git/**',
+        '**/out/**',
+        '**/*.d.ts',
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/*.spec.ts',
+        '**/*.spec.tsx',
+        ...userExcludePatterns
+      ];
       const allFiles: string[] = [];
       for (const pattern of filePatterns) {
         try {
