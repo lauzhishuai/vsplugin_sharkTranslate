@@ -839,7 +839,8 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
       worksheet.addRow(row);
     });
 
-    const outputPath = path.join(workspaceFolder.uri.fsPath, 'batch_translate_by_page.xlsx');
+    const batchExcelFileName = vscode.workspace.getConfiguration().get('sharkTranslate.batchTranslateExcelFile') as string || 'batch_translate_by_page.xlsx';
+    const outputPath = path.join(workspaceFolder.uri.fsPath, batchExcelFileName);
     await workbook.xlsx.writeFile(outputPath);
     const resultMessage = cancelled
       ? `批量翻译已取消，已导出当前进度 ${excelRows.length} 条到 ${path.basename(outputPath)}`

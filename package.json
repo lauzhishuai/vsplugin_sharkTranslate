@@ -14,8 +14,6 @@
     "onCommand:sharkTranslate.oneSharkReplace",
     "onCommand:sharkTranslate.allSharkReplace",
     "onCommand:sharkTranslate.exportChineseByPage",
-    "onCommand:sharkTranslate.exportChineseByPageId",
-    "onCommand:sharkTranslate.translateSelectionToExcel",
     "onCommand:sharkTranslate.batchTranslateChineseToExcel"
   ],
   "main": "./dist/extension.js",
@@ -30,30 +28,16 @@
         "title": "Trip Shark全替"
       },
       {
-        "command": "sharkTranslate.exportChineseByPageId",
-        "title": "Trip中文全域巡检(默认扫描src目录)"
-      },
-      {
         "command": "sharkTranslate.exportChineseByPage",
         "title": "Trip中文定域巡检"
       },
       {
-        "command": "sharkTranslate.translateSelectionToExcel",
-        "title": "Trip AI闪译(单条)"
-      },
-      {
         "command": "sharkTranslate.batchTranslateChineseToExcel",
-        "title": "Trip AI批译(批量)"
+        "title": "Trip AI批译"
       }
     ],
     "menus": {
       "editor/context": [
-        {
-          "command": "sharkTranslate.translateSelectionToExcel",
-          "title": "Trip AI闪译(单条)",
-          "group": "navigation",
-          "when": "editorTextFocus && editorHasSelection && !editorReadonly"
-        },
         {
           "command": "sharkTranslate.oneSharkReplace",
           "title": "Trip Shark点替",
@@ -70,13 +54,8 @@
       "explorer/context": [
         {
           "command": "sharkTranslate.batchTranslateChineseToExcel",
-          "title": "Trip AI批译(批量)",
+          "title": "Trip AI批译",
           "group": "navigation@1"
-        },
-        {
-          "command": "sharkTranslate.exportChineseByPageId",
-          "title": "Trip 中文全域巡检(默认扫描src目录)",
-          "group": "navigation@2"
         },
         {
           "command": "sharkTranslate.exportChineseByPage",
@@ -117,7 +96,7 @@
         },
         "sharkTranslate.realtimeTranslateApiUrl": {
           "type": "string",
-          "default": "https://api.openai.com/v1/chat/completions",
+          "default": "http://ada-cli-golang.ctripcorp.com/coding-plan/v1/chat/completions",
           "description": "实时翻译接口地址（OpenAI兼容）"
         },
         "sharkTranslate.realtimeTranslateApiKey": {
@@ -127,7 +106,7 @@
         },
         "sharkTranslate.realtimeTranslateModel": {
           "type": "string",
-          "default": "gpt-4o-mini",
+          "default": "ada-claude-sonnet-4-6",
           "description": "实时翻译模型名称"
         },
         "sharkTranslate.translateTargetLanguages": {
@@ -148,10 +127,10 @@
           ],
           "description": "AI 翻译目标语种（可多选）。默认：繁体中文(zh-HK)、英文(en-US)"
         },
-        "sharkTranslate.realtimeTranslateExcelFile": {
+        "sharkTranslate.batchTranslateExcelFile": {
           "type": "string",
-          "default": "realtime_translate.xlsx",
-          "description": "实时翻译写入的Excel文件名（位于工作区根目录）"
+          "default": "batch_translate_by_page.xlsx",
+          "description": "批量翻译写入的Excel文件名（位于工作区根目录）"
         }
       }
     }
