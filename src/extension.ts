@@ -525,11 +525,11 @@ function requestRealtimeTranslations(text: string, targetLanguages: string[]): P
 }
 
 function buildRealtimeSheetHeaders(targetLanguages: string[]): string[] {
-  return ['Origin', 'zh-CN', ...targetLanguages, 'TransKey'];
+  return ['TransKey', 'Origin', 'zh-CN', ...targetLanguages];
 }
 
 function buildRealtimeSheetRow(chinese: string, translated: RealtimeTranslationResult, transKey: string, targetLanguages: string[]): string[] {
-  const row: string[] = [chinese, chinese];
+  const row: string[] = [transKey, chinese, chinese];
   targetLanguages.forEach(languageCode => {
     if (languageCode === 'zh-HK') {
       row.push(toZhHk(chinese));
@@ -537,7 +537,6 @@ function buildRealtimeSheetRow(chinese: string, translated: RealtimeTranslationR
     }
     row.push(translated[languageCode] || '');
   });
-  row.push(transKey);
   return row;
 }
 
@@ -830,7 +829,7 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
     progress.report({ increment: 10, message: '正在生成 Excel 文件...' });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('批量翻译');
-    const dynamicHeaders = ['pageId', 'Origin', 'zh-CN', ...targetLanguages, 'TransKey'];
+    const dynamicHeaders = ['TransKey', 'PageId', 'Origin', 'zh-CN', ...targetLanguages];
     worksheet.columns = dynamicHeaders.map(header => ({
       header,
       key: header,
@@ -1142,10 +1141,8 @@ function findPageInfoForFile(filePath: string, srcRoot: string): PageInfo {
   const fileName = path.basename(filePath);
   if (/^(local)?controller\.(ts|js)$/i.test(fileName)) {
     const info = extractInfoFromController(filePath);
-    // 获取相对路径作为默认 pageId
-    const relativePath = path.relative(workspaceFolder?.uri.fsPath || '', path.dirname(filePath));
     return {
-      pageId: info.pageId || relativePath || 'root',
+      pageId: info.pageId || '',
       pageName: info.pageName || ''
     };
   }
@@ -1168,10 +1165,8 @@ function findPageInfoForFile(filePath: string, srcRoot: string): PageInfo {
       const controllerPath = path.join(currentDir, controllerFile);
       if (fs.existsSync(controllerPath)) {
         const info = extractInfoFromController(controllerPath);
-        // 获取相对路径作为默认 pageId
-        const relativePath = path.relative(workspaceFolder?.uri.fsPath || '', currentDir);
         return {
-          pageId: info.pageId || relativePath || 'root',
+          pageId: info.pageId || '',
           pageName: info.pageName || ''
         };
       }
@@ -1185,10 +1180,9 @@ function findPageInfoForFile(filePath: string, srcRoot: string): PageInfo {
     currentDir = parentDir;
   }
 
-  // 如果找不到 controller 文件，使用相对路径作为 pageId
-  const relativePath = path.relative(workspaceFolder?.uri.fsPath || '', path.dirname(filePath));
+  // 如果找不到 controller 文件，pageId 为空
   return {
-    pageId: relativePath || 'root',
+    pageId: '',
     pageName: ''
   };
 }
