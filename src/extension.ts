@@ -586,11 +586,11 @@ function requestRealtimeTranslations(text: string, targetLanguages: string[]): P
 }
 
 function buildRealtimeSheetHeaders(targetLanguages: string[]): string[] {
-  return ['TransKey', 'Origin', 'zh-CN', ...targetLanguages];
+  return ['TransKey', 'Platform', 'Origin', 'zh-CN', ...targetLanguages];
 }
 
 function buildRealtimeSheetRow(chinese: string, translated: RealtimeTranslationResult, transKey: string, targetLanguages: string[]): string[] {
-  const row: string[] = [transKey, chinese, chinese];
+  const row: string[] = [transKey, '3', chinese, chinese];
   targetLanguages.forEach(languageCode => {
     if (languageCode === 'zh-HK') {
       row.push(toZhHk(chinese));
@@ -861,6 +861,7 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
         const transKey = buildTransKeyByPageId(pageId, englishForTransKey);
         const row: Record<string, string> = {
           pageId,
+          Platform: '3',
           Origin: chinese,
           'zh-CN': chinese
         };
@@ -890,11 +891,11 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
     progress.report({ increment: 10, message: '正在生成 Excel 文件...' });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('批量翻译');
-    const dynamicHeaders = ['TransKey', 'PageId', 'Origin', 'zh-CN', ...targetLanguages];
+    const dynamicHeaders = ['TransKey', 'pageID', 'Platform', 'Origin', 'zh-CN', ...targetLanguages];
     worksheet.columns = dynamicHeaders.map(header => ({
       header,
-      key: header,
-      width: header === 'pageId' ? 20 : 50
+      key: header === 'pageID' ? 'pageId' : header,
+      width: header === 'pageID' ? 20 : 50
     }));
     excelRows.forEach(row => {
       worksheet.addRow(row);
@@ -1118,7 +1119,7 @@ async function exportChineseByPage(uri?: vscode.Uri) {
 
     // 设置表头
     worksheet.columns = [
-      { header: 'pageId', key: 'pageId', width: 20 },
+      { header: 'pageID', key: 'pageId', width: 20 },
       { header: 'pageName', key: 'pageName', width: 40 },
       { header: 'zh-CN', key: 'zh-CN', width: 50 }
     ];
@@ -1400,7 +1401,7 @@ async function exportChineseByPageId(uri?: vscode.Uri) {
 
     // 设置表头
     worksheet.columns = [
-      { header: 'pageId', key: 'pageId', width: 20 },
+      { header: 'pageID', key: 'pageId', width: 20 },
       { header: 'pageName', key: 'pageName', width: 40 },
       { header: 'zh-CN', key: 'zh-CN', width: 50 }
     ];
