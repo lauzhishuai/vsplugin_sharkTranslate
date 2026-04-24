@@ -301,6 +301,27 @@ function removeText(originalText: string, textToRemove: string) {
   return originalText;
 }
 
+function getConsoleLogRanges(text: string): Array<{ start: number; end: number }> {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const consoleLogPattern = /console\.log\s*\(([\s\S]*?)\)/g;
+  let match: RegExpExecArray | null;
+  while ((match = consoleLogPattern.exec(text)) !== null) {
+    ranges.push({
+      start: match.index,
+      end: match.index + match[0].length
+    });
+    // 防止极端情况下出现死循环
+    if (match.index === consoleLogPattern.lastIndex) {
+      consoleLogPattern.lastIndex += 1;
+    }
+  }
+  return ranges;
+}
+
+function isInRanges(start: number, end: number, ranges: Array<{ start: number; end: number }>): boolean {
+  return ranges.some(range => start >= range.start && end <= range.end);
+}
+
 function replaceChineseInText(
   text: string,
   transKeyMap: Map<string, string>,
@@ -308,6 +329,7 @@ function replaceChineseInText(
   sharkStoreVar: string
 ): { newText: string; replacedCount: number } {
   const comments: { start: number, end: number }[] = [];
+  const consoleLogRanges = getConsoleLogRanges(text);
   let match: RegExpExecArray | null;
   const commentPatterns = /\/\/.*|\/\*[\s\S]*?\*\//g;
   while ((match = commentPatterns.exec(text)) !== null) {
@@ -321,7 +343,8 @@ function replaceChineseInText(
     const matchStart = match.index;
     const matchEnd = match.index + match[0].length;
     const isInComment = comments.some(comment => matchStart >= comment.start && matchEnd <= comment.end);
-    if (!isInComment) {
+    const isInConsoleLog = isInRanges(matchStart, matchEnd, consoleLogRanges);
+    if (!isInComment && !isInConsoleLog) {
       const content = match[2];
       const hasChinese = /[\u4e00-\u9fa5]/.test(content);
       if (hasChinese) {
@@ -918,6 +941,7 @@ async function batchTranslateChineseToExcel(uri?: vscode.Uri) {
 // 从文件内容中提取中文（排除注释）
 function extractChineseFromText(text: string): string[] {
   const chineseList: string[] = [];
+  const consoleLogRanges = getConsoleLogRanges(text);
 
   // 获取注释的位置
   let comments: { start: number, end: number }[] = [];
@@ -939,8 +963,9 @@ function extractChineseFromText(text: string): string[] {
 
     // 检查是否在注释中
     const isInComment = comments.some(comment => matchStart >= comment.start && matchEnd <= comment.end);
+    const isInConsoleLog = isInRanges(matchStart, matchEnd, consoleLogRanges);
 
-    if (!isInComment) {
+    if (!isInComment && !isInConsoleLog) {
       const content = match[2]; // 提取引号内的内容（第二个捕获组）
       // 检查内容是否包含中文
       const hasChinese = /[\u4e00-\u9fa5]/.test(content);
