@@ -58,6 +58,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "sharkTranslate.allSharkReplace",
+          "title": "Trip Shark全替",
+          "group": "navigation@2"
+        },
+        {
           "command": "sharkTranslate.exportChineseByPage",
           "title": "Trip 中文定域巡检",
           "group": "navigation@3"

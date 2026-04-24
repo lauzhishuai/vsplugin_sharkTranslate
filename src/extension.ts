@@ -135,45 +135,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   // 全文替换
-  let disposableAllSharkReplace = vscode.commands.registerCommand('sharkTranslate.allSharkReplace', async function () {
-    const editor = vscode.window.activeTextEditor;
-    if (!editor) {
-      return; // 如果没有打开的编辑器，直接返回
-    }
-
-    const document = editor.document;
-    const text = document.getText();
-
-    // 获取用户配置的shark前缀
-    const sharkPrefix = vscode.workspace.getConfiguration().get('sharkTranslate.sharkPrefix') as Array<string>;
-    const sharkStoreVar = vscode.workspace.getConfiguration().get('sharkTranslate.sharkStoreVar') as string;
-
-    // 正则表达式匹配注释
-    // const commentPatterns = [
-    //     /\/\/.*$/gm,          // 单行注释
-    //     /\/\*[\s\S]*?\*\//g   // 多行注释
-    // ];
-
-    // 替换注释中的内容为空
-    let comments: { start: number, end: number }[] = [];
-    // let textWithoutComments = text;
-    // commentPatterns.forEach(pattern => {
-    //     textWithoutComments = textWithoutComments.replace(pattern, match => ' '.repeat(match.length));
-    // });
-
-    // 获取注释的位置
-    let match;
-    const commentPatterns = /\/\/.*|\/\*[\s\S]*?\*\//g;
-    while ((match = commentPatterns.exec(text)) !== null) {
-      comments.push({ start: match.index, end: match.index + match[0].length });
-    }
-
-    // 匹配非注释部分英文引号中的字符（改进版：正确处理转义）
-    // 先匹配完整的字符串字面量（单引号或双引号），然后检查是否包含中文
-    // 使用更精确的匹配，确保从开始引号匹配到对应的结束引号
-    // 改进：使用更严格的匹配，确保匹配的是完整的字符串字面量
-    const chinesePattern = /(['"])((?:(?!\1)[^\\\r\n]|\\.)*?)\1/g;
-
+  let disposableAllSharkReplace = vscode.commands.registerCommand('sharkTranslate.allSharkReplace', async function (uri?: vscode.Uri) {
     let result: TranslationEntry[] = [];
     try {
       ({ entries: result } = await loadTranslationEntriesFromExcel());
@@ -182,73 +144,62 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
 
-    if (editor && result.length) {
-      const transKeyMap = new Map<string, string>();
-      result.forEach(item => {
-        transKeyMap.set(item.Origin, item.TransKey);
-      });
-
-      // 替换非注释部分的中文字符
-      // 使用更安全的方式：先找到所有匹配，然后逐个处理
-      const matches: Array<{ match: string, quote: string, content: string, start: number, end: number }> = [];
-      let match;
-      // 重置正则的 lastIndex
-      chinesePattern.lastIndex = 0;
-      while ((match = chinesePattern.exec(text)) !== null) {
-        const matchStart = match.index;
-        const matchEnd = match.index + match[0].length;
-        const isInComment = comments.some(comment => matchStart >= comment.start && matchEnd <= comment.end);
-        if (!isInComment) {
-          const content = match[2];
-          const hasChinese = /[\u4e00-\u9fa5]/.test(content);
-          if (hasChinese) {
-            matches.push({
-              match: match[0],
-              quote: match[1],
-              content: content,
-              start: matchStart,
-              end: matchEnd
-            });
-          }
-        }
-      }
-
-      // 从后往前替换，避免位置偏移问题
-      let newText = text;
-      for (let i = matches.length - 1; i >= 0; i--) {
-        const { content, start, end } = matches[i];
-        // 验证匹配的确实是完整的字符串（开始和结束都是引号，且内容匹配）
-        const startChar = text[start];
-        const endChar = text[end - 1];
-        if (startChar === endChar && (startChar === "'" || startChar === '"')) {
-          // 再次验证：确保匹配的内容确实是引号内的内容
-          const actualContent = text.substring(start + 1, end - 1);
-          if (actualContent === content) {
-            const matchedTransKey = transKeyMap.get(content);
-            if (matchedTransKey) {
-              const hasPrefix = sharkPrefix.find(item => matchedTransKey.startsWith(item));
-              let replacement;
-              if (hasPrefix) {
-                replacement = `${sharkStoreVar}['${removeText(matchedTransKey, hasPrefix)}']`;
-              } else {
-                replacement = `${sharkStoreVar}['${matchedTransKey}']`;
-              }
-              newText = newText.substring(0, start) + replacement + newText.substring(end);
-            }
-          }
-        }
-      }
-
-      // 创建一个编辑器编辑操作
-      editor.edit(editBuilder => {
-        const firstLine = document.lineAt(0);
-        const lastLine = document.lineAt(document.lineCount - 1);
-        const textRange = new vscode.Range(firstLine.range.start, lastLine.range.end);
-        editBuilder.replace(textRange, newText);
-      });
-    } else {
-      vscode.window.showErrorMessage('未读取到shark配置文件或未正确获取到工作区，请检查');
+    if (!result.length) {
+      vscode.window.showErrorMessage('未读取到可用翻译配置，请检查翻译表');
+      return;
     }
+
+    const sharkPrefix = vscode.workspace.getConfiguration().get('sharkTranslate.sharkPrefix') as Array<string>;
+    const sharkStoreVar = vscode.workspace.getConfiguration().get('sharkTranslate.sharkStoreVar') as string;
+    const transKeyMap = new Map<string, string>();
+    result.forEach(item => {
+      transKeyMap.set(item.Origin, item.TransKey);
+    });
+
+    // 编辑器场景：无 uri 时替换当前打开文件
+    if (!uri || !uri.fsPath) {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage('未找到活动编辑器，请在文件上右键执行或先打开文件');
+        return;
+      }
+
+      const text = editor.document.getText();
+      const replaced = replaceChineseInText(text, transKeyMap, sharkPrefix, sharkStoreVar);
+      await editor.edit(editBuilder => {
+        const firstLine = editor.document.lineAt(0);
+        const lastLine = editor.document.lineAt(editor.document.lineCount - 1);
+        const textRange = new vscode.Range(firstLine.range.start, lastLine.range.end);
+        editBuilder.replace(textRange, replaced.newText);
+      });
+      vscode.window.showInformationMessage(`已替换 ${replaced.replacedCount} 处中文`);
+      return;
+    }
+
+    // 资源管理器场景：支持右键文件/文件夹批量替换
+    const targetFiles = await collectTargetFilesForReplace(uri);
+    if (targetFiles.length === 0) {
+      vscode.window.showInformationMessage('未找到可替换的目标文件');
+      return;
+    }
+
+    let replacedFileCount = 0;
+    let replacedTextCount = 0;
+    for (const filePath of targetFiles) {
+      try {
+        const originalText = fs.readFileSync(filePath, 'utf-8');
+        const replaced = replaceChineseInText(originalText, transKeyMap, sharkPrefix, sharkStoreVar);
+        if (replaced.replacedCount > 0 && replaced.newText !== originalText) {
+          fs.writeFileSync(filePath, replaced.newText, 'utf-8');
+          replacedFileCount += 1;
+          replacedTextCount += replaced.replacedCount;
+        }
+      } catch (error) {
+        console.error(`替换文件 ${filePath} 时出错:`, error);
+      }
+    }
+
+    vscode.window.showInformationMessage(`批量替换完成：${replacedFileCount} 个文件，${replacedTextCount} 处中文`);
   });
 
   // 导出页面中文到Excel
@@ -302,7 +253,10 @@ async function replaceConfigValue() {
     if (sharkObj && sharkObj.Origin && sharkObj.TransKey) {
 
       let transKey = '';
-      const hasPrefix = sharkPrefix.find(item => sharkObj.TransKey.startsWith(item))
+      const hasPrefix = sharkPrefix.find(item => {
+        const prefix = item.trim();
+        return !!prefix && sharkObj.TransKey.startsWith(prefix);
+      })
       if (hasPrefix) {
         transKey = `${sharkStoreVar}['${removeText(sharkObj.TransKey, hasPrefix)}']`;
       } else {
@@ -332,8 +286,115 @@ async function replaceConfigValue() {
 
 // 字符串删除指定文本
 function removeText(originalText: string, textToRemove: string) {
-  const regex = new RegExp(textToRemove, 'g');
-  return originalText.replace(regex, '');
+  const prefix = textToRemove.trim();
+  if (!prefix) {
+    return originalText;
+  }
+  if (originalText.startsWith(prefix)) {
+    let rest = originalText.slice(prefix.length);
+    // 兼容 prefix 不带分隔符的配置：如配置 key.10650045692，也会去掉后续的 .
+    if (rest.startsWith('.')) {
+      rest = rest.slice(1);
+    }
+    return rest;
+  }
+  return originalText;
+}
+
+function replaceChineseInText(
+  text: string,
+  transKeyMap: Map<string, string>,
+  sharkPrefix: string[],
+  sharkStoreVar: string
+): { newText: string; replacedCount: number } {
+  const comments: { start: number, end: number }[] = [];
+  let match: RegExpExecArray | null;
+  const commentPatterns = /\/\/.*|\/\*[\s\S]*?\*\//g;
+  while ((match = commentPatterns.exec(text)) !== null) {
+    comments.push({ start: match.index, end: match.index + match[0].length });
+  }
+
+  const chinesePattern = /(['"])((?:(?!\1)[^\\\r\n]|\\.)*?)\1/g;
+  const matches: Array<{ content: string; start: number; end: number }> = [];
+  chinesePattern.lastIndex = 0;
+  while ((match = chinesePattern.exec(text)) !== null) {
+    const matchStart = match.index;
+    const matchEnd = match.index + match[0].length;
+    const isInComment = comments.some(comment => matchStart >= comment.start && matchEnd <= comment.end);
+    if (!isInComment) {
+      const content = match[2];
+      const hasChinese = /[\u4e00-\u9fa5]/.test(content);
+      if (hasChinese) {
+        matches.push({ content, start: matchStart, end: matchEnd });
+      }
+    }
+  }
+
+  let newText = text;
+  let replacedCount = 0;
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const { content, start, end } = matches[i];
+    const startChar = text[start];
+    const endChar = text[end - 1];
+    if (startChar === endChar && (startChar === "'" || startChar === '"')) {
+      const actualContent = text.substring(start + 1, end - 1);
+      if (actualContent === content) {
+        const matchedTransKey = transKeyMap.get(content);
+        if (matchedTransKey) {
+          const hasPrefix = sharkPrefix.find(item => {
+            const prefix = item.trim();
+            return !!prefix && matchedTransKey.startsWith(prefix);
+          });
+          const replacement = hasPrefix
+            ? `${sharkStoreVar}['${removeText(matchedTransKey, hasPrefix)}']`
+            : `${sharkStoreVar}['${matchedTransKey}']`;
+          newText = newText.substring(0, start) + replacement + newText.substring(end);
+          replacedCount += 1;
+        }
+      }
+    }
+  }
+
+  return { newText, replacedCount };
+}
+
+async function collectTargetFilesForReplace(uri: vscode.Uri): Promise<string[]> {
+  const stat = fs.statSync(uri.fsPath);
+  if (stat.isFile()) {
+    return [uri.fsPath];
+  }
+
+  const userExcludePatterns = vscode.workspace.getConfiguration().get('sharkTranslate.scanExcludePatterns') as string[] || [];
+  const filePatterns = ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.vue'];
+  const excludePatterns = [
+    '**/node_modules/**',
+    '**/dist/**',
+    '**/build/**',
+    '**/.git/**',
+    '**/out/**',
+    '**/*.d.ts',
+    '**/*.test.ts',
+    '**/*.test.tsx',
+    '**/*.spec.ts',
+    '**/*.spec.tsx',
+    ...userExcludePatterns
+  ];
+
+  const allFiles: string[] = [];
+  for (const pattern of filePatterns) {
+    try {
+      const files = await globAsync(pattern, {
+        cwd: uri.fsPath,
+        ignore: excludePatterns,
+        absolute: true
+      });
+      allFiles.push(...files);
+    } catch (error) {
+      console.error(`扫描模式 ${pattern} 时出错:`, error);
+    }
+  }
+
+  return Array.from(new Set(allFiles));
 }
 
 interface RealtimeTranslationResult {
