@@ -2,7 +2,7 @@
   "name": "shark-translate",
   "displayName": "SharkTranslate",
   "description": "中文转shark",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "publisher": "zs-liu",
   "engines": {
     "vscode": "^1.78.0"
@@ -97,7 +97,7 @@
             "type": "string"
           },
           "default": [],
-          "description": "扫描时排除的文件或文件夹（glob 模式，字符串数组），例如: [\"**/components/**\", \"**/utils/helper.ts\"]（仅对 exportChineseByPageId 命令生效）"
+          "description": "扫描时排除的文件或文件夹。例如: [\"**/components/**\", \"**/utils/helper.ts\"]（对 exportChineseByPageId、batchTranslateChineseToExcel 命令生效）"
         },
         "sharkTranslate.realtimeTranslateApiUrl": {
           "type": "string",
