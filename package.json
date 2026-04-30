@@ -14,6 +14,7 @@
     "onCommand:sharkTranslate.oneSharkReplace",
     "onCommand:sharkTranslate.allSharkReplace",
     "onCommand:sharkTranslate.exportChineseByPage",
+    "onCommand:sharkTranslate.translateSelectionToExcel",
     "onCommand:sharkTranslate.batchTranslateChineseToExcel"
   ],
   "main": "./dist/extension.js",
@@ -34,6 +35,10 @@
       {
         "command": "sharkTranslate.batchTranslateChineseToExcel",
         "title": "Trip AI批译"
+      },
+      {
+        "command": "sharkTranslate.translateSelectionToExcel",
+        "title": "Trip AI闪译"
       }
     ],
     "menus": {
@@ -49,6 +54,12 @@
           "title": "Trip Shark全替",
           "group": "navigation",
           "when": "editorTextFocus && !editorReadonly"
+        },
+        {
+          "command": "sharkTranslate.translateSelectionToExcel",
+          "title": "Trip AI闪译",
+          "group": "navigation",
+          "when": "editorTextFocus && !editorReadonly && editorHasSelection"
         }
       ],
       "explorer/context": [

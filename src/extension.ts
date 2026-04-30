@@ -65,6 +65,8 @@ async function loadTranslationEntriesFromExcel(): Promise<{ entries: Translation
   }
 
   const searchedFiles: string[] = [];
+  const sourceFiles: string[] = [];
+  const entryMap = new Map<string, TranslationEntry>();
   for (const root of lookupRoots) {
     const candidateFiles = getCandidateTranslationExcelPaths(root);
     for (const filePath of candidateFiles) {
@@ -105,9 +107,19 @@ async function loadTranslationEntriesFromExcel(): Promise<{ entries: Translation
         .filter(item => item.Origin && item.TransKey);
 
       if (entries.length > 0) {
-        return { entries, sourceFile: filePath };
+        sourceFiles.push(filePath);
+        entries.forEach(entry => {
+          if (!entryMap.has(entry.Origin)) {
+            entryMap.set(entry.Origin, entry);
+          }
+        });
       }
     }
+  }
+
+  const entries = Array.from(entryMap.values());
+  if (entries.length > 0) {
+    return { entries, sourceFile: sourceFiles.join(' , ') };
   }
 
   throw new Error(`未找到可用翻译表。已检查: ${Array.from(new Set(searchedFiles)).join(' , ')}`);
