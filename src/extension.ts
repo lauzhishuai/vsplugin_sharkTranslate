@@ -322,6 +322,15 @@ function isInRanges(start: number, end: number, ranges: Array<{ start: number; e
   return ranges.some(range => start >= range.start && end <= range.end);
 }
 
+function isLogicalOrFallbackLiteral(text: string, literalStart: number): boolean {
+  let index = literalStart - 1;
+  while (index >= 0 && /\s/.test(text[index])) {
+    index -= 1;
+  }
+
+  return index >= 1 && text[index] === '|' && text[index - 1] === '|';
+}
+
 function replaceChineseInText(
   text: string,
   transKeyMap: Map<string, string>,
@@ -965,7 +974,7 @@ function extractChineseFromText(text: string): string[] {
     const isInComment = comments.some(comment => matchStart >= comment.start && matchEnd <= comment.end);
     const isInConsoleLog = isInRanges(matchStart, matchEnd, consoleLogRanges);
 
-    if (!isInComment && !isInConsoleLog) {
+    if (!isInComment && !isInConsoleLog && !isLogicalOrFallbackLiteral(text, matchStart)) {
       const content = match[2]; // 提取引号内的内容（第二个捕获组）
       // 检查内容是否包含中文
       const hasChinese = /[\u4e00-\u9fa5]/.test(content);
